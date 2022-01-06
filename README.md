@@ -1,4 +1,6 @@
-# translator-C-to-FASM
+# translator-C-to-FASM (v1.0 beta)
+
+NOT WORK
 
 This program should translate C code to FASM (16, 32, 64 bit).
 
