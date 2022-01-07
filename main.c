@@ -1,34 +1,52 @@
 #include <stdio.h> // printf
 #include <stdlib.h> // malloc
 
-#include <conio.h>
+#include <conio.h> // getch
 
 //========== DEFINES ===========
 
 // DATATYPES
-#define DATATYPE_NONE 0
-#define DATATYPE_LONG 1
-#define DATATYPE_INT 2
-#define DATATYPE_SHORT 3
-#define DATATYPE_CHAR 4
-#define DATATYPE_FLOAT 5
-#define DATATYPE_DOUBLE 6
-#define DATATYPE_VOID 7
+#define DATATYPE_NONE       0
+#define DATATYPE_CHAR       1
+#define DATATYPE_SHORT      2
+#define DATATYPE_INT        3
+#define DATATYPE_FLOAT      4
+#define DATATYPE_DOUBLE     5
+#define DATATYPE_VOID       6
 
 // TYPE
+#define TYPE_NONE           0
+#define TYPE_NEW_VAR        1
+#define TYPE_VAR            2
+#define TYPE_FUNC_CALL      3
+#define TYPE_IF             4
+#define TYPE_ELSE           5
+#define TYPE_FOR            6
+#define TYPE_WHILE          7
+#define TYPE_START_DO_WHILE 8
+#define TYPE_END_DO_WHILE   9
+#define TYPE_NEW_FUNC       10
+#define TYPE_START_BRACE    11
+#define TYPE_END_BRACE      12
 
-#define TYPE_NONE 0
-#define TYPE_VAR 1
-#define TYPE_CALL_FUNC 2
-#define TYPE_MFP 3
-#define TYPE_IF 4
-#define TYPE_FOR 5
-#define TYPE_WHILE 6
+#define TYPE_STRING         13
+#define TYPE_NUMBER         14
+#define TYPE_VOID           15
+#define TYPE_MATH           16
+#define TYPE_TRANSFORM      17
 
-// uint
-#define uint unsigned int
+// uint, true, false, null, bool
+#define uint    unsigned int
+#define true    1
+#define false   0
+#define null    0
+#define bool    char
 
-//============= FUNC ===============
+// DEBUG
+
+#define DEBUG
+
+// ============= FUNC ===============
 
 // length string
 unsigned int lenstr(char *str){
@@ -39,7 +57,7 @@ unsigned int lenstr(char *str){
     }
 }
 // bool
-char cmpstr(char *str, char *find){
+bool cmpstr(char *str, char *find){
     for(unsigned int i=0; i<lenstr(find); i++){
         if(str[i]==0){ return 0; }
         if(str[i]!=find[i]){ return 0; }
@@ -84,173 +102,148 @@ void error(char *code, char *errorText){
 
 // =========== STRUCT ===============
 
+struct data{
+    bool UNSIGNED;  // bool
+    bool REGISTER;  // bool
+    bool LONG;      // bool
+    bool STATIC;    // bool
+    bool EXTERN;    // bool
+
+    char datatype;  // int
+    /*
+    TYPE:
+        0 - NONE
+        1 - CHAR
+        2 - SHORT
+        3 - INT
+        4 - FLOAT
+        5 - DOUBLE
+        6 - VOID
+    */
+};
+
 struct command{
-        unsigned char type; // type command
+        char type;
         /*
-            TYPE can be:
-                0 - NONE
-                1 - variable
-                2 - call func/proc
-                3 - macro/func/proc with { }
-                4 - if
-                5 - for
-                6 - while
-                ... - NONE
+        TYPE:
+            0  - NONE
+            1  - NEW VAR (=)
+            2  - VAR (=)
+            3  - FUNC. CALL
+            4  - IF ( args )
+            5  - ELSE
+            6  - FOR( com; args; com)
+            7  - while( args )
+            8  - do...
+            9  - ...while( args )
+            10 - NEW FUNC.
+            11 - { (start)
+            12 - (end) }
+
+            13 - string
+            14 - number
+            15 - void
+            16 - ariphmetic (a+b*c)
+            17 - transform ( (int)(abc) )
         */
 
-        // type data
-        unsigned char LONG; // bool
-        unsigned char REGISTER; // bool
-        unsigned char UNSIGNED; // bool
-        unsigned char STATIC; // bool
-        unsigned char EXTERN; // bool
+        struct data datatype;
 
-        unsigned char datatype; // type data
+        char *name; // if "if" than this condition
+
+        unsigned int args; // id ^^^
         /*
-            DATATYPE can be:
-                0 - NONE
-                1 - long
-                2 - int
-                3 - short
-                4 - char
-                5 - float
-                6 - double
-                7 - void
-                ... - NONE
+            0 - var = 0
+            1 - var = (next command)
         */
 
-        char *name; // name command/variable
-
-        char *args; // arguments command
-
-        struct command *dopCommand; // for macro/func/proc with { }
+        char *dopArgs;
 };
 
 // ============= PARSER =============
 
-struct command *parser(char *code, unsigned int *count, struct command *tmpcom){
-    // code - string with code
-    // count - address on variable, returns the number of cells in an array
-    // the function returns an array of 'command' structures
-    //struct command tmpcom;
-    cleararr(tmpcom, sizeof(tmpcom));
+void parser(char *code){
+    struct command tmpcom;
+    cleararr( &tmpcom, sizeof(tmpcom) );
 
-    uint len = lenstr(code);
+    // DATATYPE
+    if( cmpstr( code, "unsigned " ) ){ tmpcom.datatype.UNSIGNED  = true; code += 9; }
+    if( cmpstr( code, "register " ) ){ tmpcom.datatype.REGISTER  = true; code += 9; }
+    if( cmpstr( code, "long "     ) ){ tmpcom.datatype.LONG      = true; code += 5; }
+    if( cmpstr( code, "static "   ) ){ tmpcom.datatype.STATIC    = true; code += 7; }
+    if( cmpstr( code, "extern "   ) ){ tmpcom.datatype.EXTERN    = true; code += 7; }
 
-    // получаем тип данных (get datatype)
-    if( cmpstr(code, "unsigned ") ){ tmpcom->UNSIGNED   = 1; code+=9; }
-    if( cmpstr(code, "register ") ){ tmpcom->REGISTER   = 1; code+=9; }
-    if( cmpstr(code, "long ") )    { tmpcom->LONG       = 1; code+=5; }
-    if( cmpstr(code, "static ") )  { tmpcom->STATIC     = 1; code+=7; }
-    if( cmpstr(code, "extern ") )  { tmpcom->EXTERN     = 1; code+=7; }
+    if( cmpstr( code, "char "  ) ){ tmpcom.datatype.datatype = DATATYPE_CHAR;   code += 5; } else
+    if( cmpstr( code, "short " ) ){ tmpcom.datatype.datatype = DATATYPE_SHORT;  code += 6; } else
+    if( cmpstr( code, "int "   ) ){ tmpcom.datatype.datatype = DATATYPE_INT;    code += 4; } else
+    if( cmpstr( code, "float " ) ){ tmpcom.datatype.datatype = DATATYPE_FLOAT;  code += 6; } else
+    if( cmpstr( code, "double ") ){ tmpcom.datatype.datatype = DATATYPE_DOUBLE; code += 7; } else
+    if( cmpstr( code, "void "  ) ){ tmpcom.datatype.datatype = DATATYPE_VOID;   code += 5; } else {
+        tmpcom.datatype.datatype = DATATYPE_NONE;
+    }
 
-    if( cmpstr(code, "long ") )         { tmpcom->datatype = DATATYPE_LONG;     code+=5; } else
-        if( cmpstr(code, "int ") )      { tmpcom->datatype = DATATYPE_INT;      code+=4; } else
-        if( cmpstr(code, "short ") )    { tmpcom->datatype = DATATYPE_SHORT;    code+=6; } else
-        if( cmpstr(code, "char ") )     { tmpcom->datatype = DATATYPE_CHAR;     code+=5; } else
-        if( cmpstr(code, "float ") )    { tmpcom->datatype = DATATYPE_FLOAT;    code+=6; } else
-        if( cmpstr(code, "double ") )   { tmpcom->datatype = DATATYPE_DOUBLE;   code+=7; } else
-        if( cmpstr(code, "void ") )     { tmpcom->datatype = DATATYPE_VOID;     code+=5; }
-    else { tmpcom->datatype = DATATYPE_NONE; }
-
-
-    // получаем имя (get name)
-    if( '0' <= code[0] && code[0] <= '9' ){ error( code, "You cannot create this name." ); }
-
+    // NAME
     uint i = 0;
     while(1){
         if( code[i] == 0 ){ break; }
-        if( (code[i] >= '0' && code[i] <= '9') || (code[i] >= 'a' && code[i] <= 'z') || (code[i] >= 'A' && code[i] <= 'Z') )
-            { i++; } else { break; }
+        if( ('0'<=code[i] && code[i]<='9') || ('A'<=code[i] && code[i]<='Z')
+           || ('a'<=code[i] && code[i]<='z') || code[i]=='_' ){ i++; } else { break; }
     }
 
-    tmpcom->name = copystr(code, i); // save name
+    tmpcom.name = copystr(code, i);
     code+=i;
 
-    // получаем тип команды (get type command)
-    i=0;
+    #ifdef DEBUG
+    printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\t\tLONG: %d\n\t\tSTATIC: %d\n\t\tEXTERN: %d\n\n", (int)(tmpcom.datatype.UNSIGNED), (int)(tmpcom.datatype.REGISTER), (int)(tmpcom.datatype.LONG), (int)(tmpcom.datatype.STATIC), (int)(tmpcom.datatype.EXTERN));
+    printf("\t\tNAME: \'%s\'\n", tmpcom.name);
+    #endif // DEBUG
+
+    i = 0;
     while(1){
-        if( code[i]==0 || code[i]!=' ' ){ break; }
-        i++;
+        if( code[i] == 0 ){ break; }
+        if( code[i] == ' ' || code[i] < '!' ){ i++; } else { break; }
     }
     code+=i;
 
-    if( code[0]!=0 ){
-        if( code[0]=='=' ){
-            tmpcom->type = TYPE_VAR;
+    if( code[0]=='=' || code[0]==';' ){ // THIS 'NEW VAR' or 'VAR'
+        if( tmpcom.datatype.UNSIGNED || tmpcom.datatype.STATIC || tmpcom.datatype.REGISTER || tmpcom.datatype.LONG || tmpcom.datatype.EXTERN || tmpcom.datatype.datatype ){
+            tmpcom.type = TYPE_NEW_VAR;
+        } else {
+            tmpcom.type = TYPE_VAR;
         }
-        if(code[0]=='(' || code[0]==')'){
-            if(cmpstr(tmpcom->name, "if")){
-                tmpcom->type = TYPE_IF;
-            } else if(cmpstr(tmpcom->name, "for")){
-                tmpcom->type = TYPE_FOR;
-            } else if(cmpstr(tmpcom->name, "while")){
-                tmpcom->type = TYPE_WHILE;
-            } else {
-                tmpcom->type = TYPE_CALL_FUNC;
-            }
-        }
-    }
+        if( code[0] == ';' ){ tmpcom.args=0; } else
+        if( code[0] == '=' ){
 
-    // получаем аргументы (get arguments)
-    i=0;
-    while(1){
-        if( code[i]==0 || code[i]!=' ' ){ break; }
-        i++;
-    }
-    code+=i;
-
-    if(tmpcom->type == TYPE_VAR){
-        if(code[0]=='='){
-            tmpcom->args = code; // tmp
             code++;
-
-            i=0; // игнор пробела (ignore "space")
+            i = 0;
             while(1){
-                if( code[i]==0 || code[i]!=' ' ){ break; }
-                i++;
+                if( code[i] == 0 ){ break; }
+                if( code[i] == ' ' || code[i] < '!' ){ i++; } else { break; }
             }
             code+=i;
+            if( code[0] == ';' ){ tmpcom.args=0; goto IF_EXIT1; }
 
-            if(code[0]==';'){
-                tmpcom->args = "0";
-            }else{
-                i=0;
-                while(1){
-                    if( code[i]==0 || code[i]==';' || code[i]!=' ' ){ break; }
-                    i++;
-                }
-                code+=i;
-
-                char tmpbool = 0;
-                i=0;
-                while(1){
-                    if( code[i]==0 || code[i]==';' ){ break; }
-                    if( code[i]>='0' && code[i]<='9' ){ i++; } else { tmpbool = 1; break; }
-                }
-
-                if(tmpbool==0){
-                    printf("IS NUM\n\n");
-                    tmpcom->args = copystrAdr(tmpcom->args, code+i);
-                } else {
-                    printf("IS NOT NUM\n\n");
-                    tmpcom->args = "=";
-                    tmpcom->dopCommand = // THIS
-                }
-
-
-
+            uint i = 0;
+            while(1){
+                if( code[i] == 0 || code[i] == ';' || code[i] == '}' ){ break; }
+                if( ('0'<=code[i] && code[i]<='9') || ('A'<=code[i] && code[i]<='Z')
+                    || ('a'<=code[i] && code[i]<='z') || code[i]=='_' ){ i++; } else {
+                        goto COM1;
+                        break;
+                    }
             }
+            COM1:
+                // THIS, нада прочитать знач, и понять это функция или число
+
         }
     }
+    IF_EXIT1:
 
-    return tmpcom;
 }
 
 int main(){
-    unsigned int count;
-    struct command tmp;
-    parser("unsigned int abc = foo();", &count, &tmp);
-    printf("NAME: \"%s\"\nTYPE: %d\nARGS: \"%s\"\n", tmp.name, tmp.type, tmp.args);
+
+    parser("unsigned int abc    =10;");
+
     return 0;
 }
