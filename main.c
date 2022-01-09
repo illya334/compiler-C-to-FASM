@@ -10,9 +10,10 @@
 #define DATATYPE_CHAR       1
 #define DATATYPE_SHORT      2
 #define DATATYPE_INT        3
-#define DATATYPE_FLOAT      4
-#define DATATYPE_DOUBLE     5
-#define DATATYPE_VOID       6
+#define DATATYPE_LONG       4
+#define DATATYPE_FLOAT      5
+#define DATATYPE_DOUBLE     6
+#define DATATYPE_VOID       7
 
 // TYPE
 #define TYPE_NONE           0
@@ -35,6 +36,9 @@
 #define TYPE_MATH           16
 #define TYPE_TRANSFORM      17
 
+#define TYPE_EQU            18
+#define TYPE_POINT          19
+
 // uint, true, false, null, bool
 #define uint    unsigned int
 #define true    1
@@ -44,7 +48,14 @@
 
 // DEBUG
 
-#define DEBUG
+//#define DEBUG_PARSER
+
+// ============= VAR ================
+
+char *code = "unsigned int    &abc    =   \'\\\'\'   ;";
+char *EndCode;
+
+unsigned int lines = 0;
 
 // ============= FUNC ===============
 
@@ -96,8 +107,19 @@ void error(char *code, char *errorText){
     printf("ERROR: %s\n", errorText);
     code = copystr(code, 0);
     code[10]='\0';
-    printf("%s\n", code);
+    printf("%d | %s\n", lines, code);
     exit(1);
+}
+
+// IGNORE SPACE
+unsigned int IgnoreSpace(char *code){
+    unsigned int i = 0;
+    while(1){
+        if( code[i] == 0 ){ break; }
+        if( code[i] == '\n' ){ lines++; }
+        if( code[i] == ' ' || code[i] < '!' ){ i++; } else { break; }
+    }
+    return i;
 }
 
 // =========== STRUCT ===============
@@ -105,9 +127,6 @@ void error(char *code, char *errorText){
 struct data{
     bool UNSIGNED;  // bool
     bool REGISTER;  // bool
-    bool LONG;      // bool
-    bool STATIC;    // bool
-    bool EXTERN;    // bool
 
     char datatype;  // int
     /*
@@ -116,9 +135,10 @@ struct data{
         1 - CHAR
         2 - SHORT
         3 - INT
-        4 - FLOAT
-        5 - DOUBLE
-        6 - VOID
+        4 - LONG
+        5 - FLOAT
+        6 - DOUBLE
+        7 - VOID
     */
 };
 
@@ -145,6 +165,9 @@ struct command{
             15 - void
             16 - ariphmetic (a+b*c)
             17 - transform ( (int)(abc) )
+
+            18 - = (equ)
+            19 - point
         */
 
         struct data datatype;
@@ -152,98 +175,179 @@ struct command{
         char *name; // if "if" than this condition
 
         unsigned int args; // id ^^^
-        /*
-            0 - var = 0
-            1 - var = (next command)
-        */
 
         char *dopArgs;
 };
 
 // ============= PARSER =============
 
-void parser(char *code){
-    struct command tmpcom;
-    cleararr( &tmpcom, sizeof(tmpcom) );
+struct command *tmpcom = 0;
+
+struct command *parser(){
+    // code - 'string' code
+    // struct command *tmpcom - THIS NULL
+
+    if( tmpcom==0 ){ tmpcom = malloc( sizeof( struct command ) ); }
+    cleararr( tmpcom, sizeof(tmpcom) );
+    tmpcom->name = 0;
+
+    uint i = 0;
+
+    // ========= CODE =========
+
+    code += IgnoreSpace(code);
+
+    if( code[0]==';' ){ return 0; }
+
+    if( code[0]=='=' ){
+        code++;
+        tmpcom->type = TYPE_EQU;
+        tmpcom->name = "="; // ...
+        goto ExitParser;
+    }
+
+    if( ('0'<=code[0] && code[0]<='9') || code[0] == '\'' ){ // IS NUMBER?
+
+        if( code[0]=='0' && code[1]=='x' ){ // HEX
+
+            tmpcom->type = TYPE_NUMBER;
+            i = 2;
+            while(1){
+                if( code+i > EndCode ){ return 0; }
+                if( code[i] == 0 ){ break; }
+                if( ('0'<=code[i] && code[i]<='9') || (code[i] == 'A' || code[i] == 'B' || code[i] == 'C' || code[i] == 'D' || code[i] == 'E' || code[i] == 'F'
+                   || code[i] == 'a' || code[i] == 'b' || code[i] == 'c' || code[i] == 'd' || code[i] == 'e' || code[i] == 'f') ){ i++; } else { break; }
+            }
+            tmpcom->name = copystr(code, i);
+            code+=i;
+            goto ExitParser;
+
+        } else if( code[0] == '\'' ){ // CHAR
+
+            tmpcom->type = TYPE_NUMBER;
+            i = 1;
+            while(1){
+                if( code+i > EndCode ){ return 0; }
+                if( code[i] == '\\' && code[i+1] == '\'' ){ i+=2; }
+                if( code[i] == 0 ){ error(code, "where \' ?"); }
+                if( code[i] == '\'' ){ break; }
+                i++;
+            }
+            i++;
+            tmpcom->name = copystr(code, i);
+            code+=i;
+            goto ExitParser;
+
+
+        } else { // SINGLE NUMBER
+
+            tmpcom->type = TYPE_NUMBER;
+            i = 0;
+            while(1){
+                if( code+i > EndCode ){ return 0; }
+                if( code[i] == 0 ){ break; }
+                if( ('0'<=code[i] && code[i]<='9') ){ i++; } else { break; }
+            }
+            if( code[i] == 'h' ){ // or HEX
+                i++;
+            }
+            tmpcom->name = copystr(code, i);
+            code+=i;
+            goto ExitParser;
+
+        }
+    }
 
     // DATATYPE
-    if( cmpstr( code, "unsigned " ) ){ tmpcom.datatype.UNSIGNED  = true; code += 9; }
-    if( cmpstr( code, "register " ) ){ tmpcom.datatype.REGISTER  = true; code += 9; }
-    if( cmpstr( code, "long "     ) ){ tmpcom.datatype.LONG      = true; code += 5; }
-    if( cmpstr( code, "static "   ) ){ tmpcom.datatype.STATIC    = true; code += 7; }
-    if( cmpstr( code, "extern "   ) ){ tmpcom.datatype.EXTERN    = true; code += 7; }
+    while(1){
+        code += IgnoreSpace(code);
 
-    if( cmpstr( code, "char "  ) ){ tmpcom.datatype.datatype = DATATYPE_CHAR;   code += 5; } else
-    if( cmpstr( code, "short " ) ){ tmpcom.datatype.datatype = DATATYPE_SHORT;  code += 6; } else
-    if( cmpstr( code, "int "   ) ){ tmpcom.datatype.datatype = DATATYPE_INT;    code += 4; } else
-    if( cmpstr( code, "float " ) ){ tmpcom.datatype.datatype = DATATYPE_FLOAT;  code += 6; } else
-    if( cmpstr( code, "double ") ){ tmpcom.datatype.datatype = DATATYPE_DOUBLE; code += 7; } else
-    if( cmpstr( code, "void "  ) ){ tmpcom.datatype.datatype = DATATYPE_VOID;   code += 5; } else {
-        tmpcom.datatype.datatype = DATATYPE_NONE;
+        if( code > EndCode ){ return 0; }
+
+        if( cmpstr( code, "unsigned " ) ){ tmpcom->datatype.UNSIGNED  = true; code += 9; } else
+        if( cmpstr( code, "register " ) ){ tmpcom->datatype.REGISTER  = true; code += 9; } else {
+            break;
+        }
     }
+
+    while(1){
+        code += IgnoreSpace(code);
+
+        if( code > EndCode ){ return 0; }
+
+        if( cmpstr( code, "char "  ) ){ tmpcom->datatype.datatype = DATATYPE_CHAR;   code += 5; } else
+        if( cmpstr( code, "short " ) ){ tmpcom->datatype.datatype = DATATYPE_SHORT;  code += 6; } else
+        if( cmpstr( code, "int "   ) ){ tmpcom->datatype.datatype = DATATYPE_INT;    code += 4; } else
+        if( cmpstr( code, "long "  ) ){ tmpcom->datatype.datatype = DATATYPE_LONG;   code += 5; } else
+        if( cmpstr( code, "float " ) ){ tmpcom->datatype.datatype = DATATYPE_FLOAT;  code += 6; } else
+        if( cmpstr( code, "double ") ){ tmpcom->datatype.datatype = DATATYPE_DOUBLE; code += 7; } else
+        if( cmpstr( code, "void "  ) ){ tmpcom->datatype.datatype = DATATYPE_VOID;   code += 5; } else {
+            if(tmpcom->datatype.datatype == 0){
+                tmpcom->datatype.datatype = DATATYPE_NONE;
+            }
+            break;
+        }
+    }
+
+    code += IgnoreSpace(code);
+
+    if( code > EndCode ){ return 0; }
 
     // NAME
-    uint i = 0;
-    while(1){
-        if( code[i] == 0 ){ break; }
-        if( ('0'<=code[i] && code[i]<='9') || ('A'<=code[i] && code[i]<='Z')
-           || ('a'<=code[i] && code[i]<='z') || code[i]=='_' ){ i++; } else { break; }
-    }
-
-    tmpcom.name = copystr(code, i);
-    code+=i;
-
-    #ifdef DEBUG
-    printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\t\tLONG: %d\n\t\tSTATIC: %d\n\t\tEXTERN: %d\n\n", (int)(tmpcom.datatype.UNSIGNED), (int)(tmpcom.datatype.REGISTER), (int)(tmpcom.datatype.LONG), (int)(tmpcom.datatype.STATIC), (int)(tmpcom.datatype.EXTERN));
-    printf("\t\tNAME: \'%s\'\n", tmpcom.name);
-    #endif // DEBUG
-
     i = 0;
     while(1){
         if( code[i] == 0 ){ break; }
-        if( code[i] == ' ' || code[i] < '!' ){ i++; } else { break; }
+        if( code+i > EndCode ){ return 0; }
+        if( ('0'<=code[i] && code[i]<='9') || ('A'<=code[i] && code[i]<='Z')
+           || ('a'<=code[i] && code[i]<='z') || code[i]=='_' || code[i]=='*' || code[i]=='&' ){ i++; } else { break; }
     }
+
+    tmpcom->name = copystr(code, i);
     code+=i;
 
-    if( code[0]=='=' || code[0]==';' ){ // THIS 'NEW VAR' or 'VAR'
-        if( tmpcom.datatype.UNSIGNED || tmpcom.datatype.STATIC || tmpcom.datatype.REGISTER || tmpcom.datatype.LONG || tmpcom.datatype.EXTERN || tmpcom.datatype.datatype ){
-            tmpcom.type = TYPE_NEW_VAR;
-        } else {
-            tmpcom.type = TYPE_VAR;
-        }
-        if( code[0] == ';' ){ tmpcom.args=0; } else
-        if( code[0] == '=' ){
+    if( code > EndCode ){ return 0; }
 
-            code++;
-            i = 0;
-            while(1){
-                if( code[i] == 0 ){ break; }
-                if( code[i] == ' ' || code[i] < '!' ){ i++; } else { break; }
-            }
-            code+=i;
-            if( code[0] == ';' ){ tmpcom.args=0; goto IF_EXIT1; }
+    #ifdef DEBUG_PARSER
+    printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\n", (int)(tmpcom->datatype.UNSIGNED), (int)(tmpcom->datatype.REGISTER) );
+    printf("\t\tDATATYPE: %d\n\t\tNAME: \'%s\'\n", tmpcom->datatype.datatype, tmpcom->name);
+    #endif // DEBUG_PARSER
 
-            uint i = 0;
-            while(1){
-                if( code[i] == 0 || code[i] == ';' || code[i] == '}' ){ break; }
-                if( ('0'<=code[i] && code[i]<='9') || ('A'<=code[i] && code[i]<='Z')
-                    || ('a'<=code[i] && code[i]<='z') || code[i]=='_' ){ i++; } else {
-                        goto COM1;
-                        break;
-                    }
-            }
-            COM1:
-                // THIS, нада прочитать знач, и понять это функция или число
-
+    code += IgnoreSpace(code);
+    if( code[0] == '=' || code[0] == ';' ){
+        if( tmpcom->datatype.REGISTER || tmpcom->datatype.UNSIGNED || tmpcom->datatype.datatype ){
+            tmpcom->type = TYPE_NEW_VAR;
+        }else{
+            tmpcom->type = TYPE_VAR;
         }
     }
-    IF_EXIT1:
 
+    #ifdef DEBUG_PARSER
+        printf("\t\tTYPE: %d\n", tmpcom->type);
+    #endif // DEBUG_PARSER
+
+    ExitParser: // ============ EXIT PARSER ===============
+    return tmpcom;
 }
 
 int main(){
+    EndCode = code + lenstr(code);
 
-    parser("unsigned int abc    =10;");
+    for(uint i=0; i<4; i++){
+        struct command *tmpcom = parser();
+
+        if( tmpcom == 0 ){
+            printf("\t\t(null)\n");
+        } else {
+            printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\n", (int)(tmpcom->datatype.UNSIGNED), (int)(tmpcom->datatype.REGISTER) );
+            printf("\t\tDATATYPE: %d\n\t\tNAME: ", tmpcom->datatype.datatype);
+            if( tmpcom->name == 0 ){
+                printf("(null)\n");
+            } else {
+                printf("\"%s\"\n", tmpcom->name);
+            }
+            printf("\t\tTYPE: %d\n\n", tmpcom->type);
+        }
+    }
 
     return 0;
 }
