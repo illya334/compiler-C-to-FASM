@@ -17,27 +17,90 @@
 
 // TYPE
 #define TYPE_NONE           0
+/* TYPE_NONE:
+    по идеи это пустая структура или произошла ощибка
+*/
 #define TYPE_NEW_VAR        1
 #define TYPE_VAR            2
-#define TYPE_FUNC_CALL      3
-#define TYPE_IF             4
-#define TYPE_ELSE           5
-#define TYPE_FOR            6
-#define TYPE_WHILE          7
-#define TYPE_START_DO_WHILE 8
-#define TYPE_END_DO_WHILE   9
-#define TYPE_NEW_FUNC       10
-#define TYPE_START_BRACE    11
-#define TYPE_END_BRACE      12
+/* TYPE_VAR and TYPE_NEW_VAR:
+    DATATYPE - только в TYPE_NEW_VAR
+    *name - имя переменой
+*/
+#define TYPE_FUNC_CALL      3  // НЕ РЕАЛЕЗОВАНО
+/* TYPE_FUNC_CALL:
+        *name - имя
+        args - количество аргументов
+        *dopargs - масив указателей на масивы с структурой command
+*/
+#define TYPE_IF             4  // НЕ РЕАЛЕЗОВАНО
+/* TYPE_IF:
+    *name = аргументы в виде строки
+    args - id
+
+    берет следующую команду
+ */
+#define TYPE_ELSE           5  // НЕ РЕАЛЕЗОВАНО
+/* TYPE_ELSE:
+    args - id
+
+    берет следующую команду
+*/
+#define TYPE_FOR            6  // НЕ РЕАЛЕЗОВАНО
+/* TYPE_FOR:
+    *name - условие
+    *dopargs - масив указателей на масивы с структурами command
+
+    берет следующую команду
+*/
+#define TYPE_WHILE          7  // НЕ РЕАЛЕЗОВАНО
+/* TYPE_WHILE
+    *name - условие
+
+    берет следующую команду
+*/
+#define TYPE_START_DO_WHILE 8  // НЕ РЕАЛЕЗОВАНО
+/* TYPE_START_DO_WHILE:
+    args - id
+    берет следующую команду
+*/
+#define TYPE_END_DO_WHILE   9  // НЕ РЕАЛЕЗОВАНО
+/* TYPE_END_DO_WHILE:
+    *name - условие
+    args - id
+
+    берет следующую команду
+*/
+#define TYPE_NEW_FUNC       10 // НЕ РЕАЛЕЗОВАНО
+/* TYPE_NEW_FUNC:
+        DATATYPE
+        *name - имя функции
+        *dopargs - аргументы в виде строки
+
+        берет следующую команду
+*/
+#define TYPE_START_BRACE    11 // НЕ РЕАЛЕЗОВАНО
+/* TYPE_START_BRACE:
+    args - id
+    берет следующие команды
+*/
+#define TYPE_END_BRACE      12 // НЕ РЕАЛЕЗОВАНО
+/* TYPE_END_BRACE:
+    args - id
+*/
 
 #define TYPE_STRING         13
 #define TYPE_NUMBER         14
-#define TYPE_VOID           15
-#define TYPE_MATH           16
-#define TYPE_TRANSFORM      17
+#define TYPE_VOID           15 // 50% - не строгать
+#define TYPE_MATH           16 // НЕ РЕАЛЕЗОВАНО
+#define TYPE_TRANSFORM      17 // НЕ РЕАЛЕЗОВАНО
+/* TYPE_TRANSFORM:
+        DATATYPE
+        name - адрес на масив структур
+        args - число структур
+*/
 
 #define TYPE_EQU            18
-#define TYPE_POINT          19
+#define TYPE_POINT          19 // НЕ РЕАЛЕЗОВАНО
 
 // uint, true, false, null, bool
 #define uint    unsigned int
@@ -52,7 +115,7 @@
 
 // ============= VAR ================
 
-char *code = "unsigned int    &abc    =   \'\\\'\'   ;";
+char *code = "    ";
 char *EndCode;
 
 unsigned int lines = 0;
@@ -75,15 +138,6 @@ bool cmpstr(char *str, char *find){
     }
 }
 // char* ( MALLOC!!! )
-char *copystrAdr(char *start, char *end){
-    unsigned int len = end-start;
-    char *buf = malloc(len+1);
-    for(unsigned int i=0; i<len; i++){
-        buf[i]=start[i];
-        buf[i+1]=0;
-    }
-    return buf;
-}
 char *copystr(char *start, unsigned int len){
     if(len == 0){
         len = lenstr(start);
@@ -195,7 +249,9 @@ struct command *parser(){
 
     // ========= CODE =========
 
-    code += IgnoreSpace(code);
+    i = IgnoreSpace(code);
+    if( code+i >= EndCode ){ return 0; }
+    code+=i;
 
     if( code[0]==';' ){ return 0; }
 
@@ -238,7 +294,6 @@ struct command *parser(){
             code+=i;
             goto ExitParser;
 
-
         } else { // SINGLE NUMBER
 
             tmpcom->type = TYPE_NUMBER;
@@ -248,19 +303,31 @@ struct command *parser(){
                 if( code[i] == 0 ){ break; }
                 if( ('0'<=code[i] && code[i]<='9') ){ i++; } else { break; }
             }
-            if( code[i] == 'h' ){ // or HEX
-                i++;
-            }
+            if( code[i] == 'h' ){ i++; } // or HEX
             tmpcom->name = copystr(code, i);
             code+=i;
             goto ExitParser;
-
         }
+    }
+
+    if( code[0]=='\"' ){
+        tmpcom->type = TYPE_STRING;
+        i=1;
+        while(1){
+            if( code+i > EndCode ){ return 0; }
+            if( code[i] == 0 || code[i]=='\"' ){ break; }
+            i++;
+        }
+        tmpcom->name = copystr(code, ++i);
+        code+=i;
+        goto ExitParser;
     }
 
     // DATATYPE
     while(1){
-        code += IgnoreSpace(code);
+        i = IgnoreSpace(code);
+        if( code+i>=EndCode ){ return 0; }
+        code+=i;
 
         if( code > EndCode ){ return 0; }
 
@@ -271,7 +338,9 @@ struct command *parser(){
     }
 
     while(1){
-        code += IgnoreSpace(code);
+        i = IgnoreSpace(code);
+        if( code+i>=EndCode ){ return 0; }
+        code+=i;
 
         if( code > EndCode ){ return 0; }
 
@@ -289,7 +358,9 @@ struct command *parser(){
         }
     }
 
-    code += IgnoreSpace(code);
+    i = IgnoreSpace(code);
+    if( code+i>=EndCode ){ return 0; }
+    code+=i;
 
     if( code > EndCode ){ return 0; }
 
@@ -312,7 +383,10 @@ struct command *parser(){
     printf("\t\tDATATYPE: %d\n\t\tNAME: \'%s\'\n", tmpcom->datatype.datatype, tmpcom->name);
     #endif // DEBUG_PARSER
 
-    code += IgnoreSpace(code);
+    i = IgnoreSpace(code);
+    if( code+i>=EndCode ){ return 0; }
+    code+=i;
+
     if( code[0] == '=' || code[0] == ';' ){
         if( tmpcom->datatype.REGISTER || tmpcom->datatype.UNSIGNED || tmpcom->datatype.datatype ){
             tmpcom->type = TYPE_NEW_VAR;
@@ -332,7 +406,9 @@ struct command *parser(){
 int main(){
     EndCode = code + lenstr(code);
 
-    for(uint i=0; i<4; i++){
+    printf( "%d\n", (int)( parser(code) ) );
+
+/*    for(uint i=0; i<4; i++){
         struct command *tmpcom = parser();
 
         if( tmpcom == 0 ){
@@ -347,7 +423,7 @@ int main(){
             }
             printf("\t\tTYPE: %d\n\n", tmpcom->type);
         }
-    }
+    }*/
 
     return 0;
 }
