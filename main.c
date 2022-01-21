@@ -32,7 +32,7 @@
         args - количество аргументов
         *dopargs - масив указателей на масивы с структурой command
 */
-#define TYPE_IF             4  // НЕ РЕАЛЕЗОВАНО
+#define TYPE_IF             4
 /* TYPE_IF:
     *name = аргументы в виде строки
     args - id
@@ -90,7 +90,7 @@
 
 #define TYPE_STRING         13
 #define TYPE_NUMBER         14
-#define TYPE_VOID           15 // 50% - не строгать
+#define TYPE_VOID           15 // 50% - не трогать
 #define TYPE_MATH           16 // НЕ РЕАЛЕЗОВАНО
 #define TYPE_TRANSFORM      17 // НЕ РЕАЛЕЗОВАНО
 /* TYPE_TRANSFORM:
@@ -115,15 +115,36 @@
 
 // ============= VAR ================
 
-char *code = "    ";
-char *EndCode;
+char *code = "    if  ( ( abc > 5 ) || ( abc < 10 ) ) printf(\"hi\");"; // тестовый код
+char *EndCode; // адесс конца кода
 
-unsigned int lines = 0;
+unsigned int lines = 0; // сколько строк насчитал
+
+char **LocalMalloc_arr = 0; // адресс на масив для LocalMalloc
+unsigned int LocalMalloc_arr_index = 0; // индекс последнего елемента масива LocalMalloc
+
+unsigned int LAST_ID_IF = 0;
+unsigned int LAST_ID_BRACE = 0;
 
 // ============= FUNC ===============
 
+// char* ( malloc )
+char *LocalMalloc(unsigned int len){ // выделить память и сохранить адрес в масив
+    if( LocalMalloc_arr == 0 ){ LocalMalloc_arr = malloc( sizeof( char* ) * 20 ); }
+    LocalMalloc_arr[LocalMalloc_arr_index] = malloc( len );
+    LocalMalloc_arr_index++;
+    return LocalMalloc_arr[ LocalMalloc_arr_index - 1 ];
+}
+// bool
+bool LocalMalloc_Clear(){ // удалить всю выделеную память созданую с помощью LocalMalloc
+    for(unsigned int i = 0; i<LocalMalloc_arr_index; i++){
+        // неработает, компилятор ругаеца
+        // free( (char*)(LocalMalloc[i]) ); // очистить память
+    }
+    return true;
+}
 // length string
-unsigned int lenstr(char *str){
+unsigned int lenstr(char *str){ // длина строки ASCII (до первого 0)
     register unsigned int len=0;
     while(1){
         if(str[len]==0){ return len; }
@@ -131,18 +152,18 @@ unsigned int lenstr(char *str){
     }
 }
 // bool
-bool cmpstr(char *str, char *find){
+bool cmpstr(char *str, char *find){ // сравнить строки ASCII (до 0 в str или find)
     for(unsigned int i=0; i<lenstr(find); i++){
         if(str[i]==0){ return 0; }
         if(str[i]!=find[i]){ return 0; }
     }
 }
-// char* ( MALLOC!!! )
-char *copystr(char *start, unsigned int len){
+// char* ( LocalMalloc )
+char *copystr(char *start, unsigned int len){ // скопировать строку в выделеную память (с помощью LocalMalloc, ASCII)
     if(len == 0){
         len = lenstr(start);
     }
-    char *buf = malloc(len+1);
+    char *buf = LocalMalloc(len+1);
     for(unsigned int i=0; i<len; i++){
         buf[i]=start[i];
         buf[i+1]=0;
@@ -150,14 +171,14 @@ char *copystr(char *start, unsigned int len){
     return buf;
 }
 // CLEAR STRUCT/ARRAY
-void cleararr(char *arr, unsigned int len){
+void cleararr(char *arr, unsigned int len){ // заполняет масив нулями
     for(unsigned int i=0; i<len; i++){
         arr[i]=0;
     }
 }
 
 // PRINT ERROR
-void error(char *code, char *errorText){
+void error(char *code, char *errorText){ // выводит ощибку на экран и останавливает программу
     printf("ERROR: %s\n", errorText);
     code = copystr(code, 0);
     code[10]='\0';
@@ -166,7 +187,7 @@ void error(char *code, char *errorText){
 }
 
 // IGNORE SPACE
-unsigned int IgnoreSpace(char *code){
+unsigned int IgnoreSpace(char *code){ // игнорировать пропуски (ASCII)
     unsigned int i = 0;
     while(1){
         if( code[i] == 0 ){ break; }
@@ -178,25 +199,7 @@ unsigned int IgnoreSpace(char *code){
 
 // =========== STRUCT ===============
 
-struct data{
-    bool UNSIGNED;  // bool
-    bool REGISTER;  // bool
-
-    char datatype;  // int
-    /*
-    TYPE:
-        0 - NONE
-        1 - CHAR
-        2 - SHORT
-        3 - INT
-        4 - LONG
-        5 - FLOAT
-        6 - DOUBLE
-        7 - VOID
-    */
-};
-
-struct command{
+struct command{ // основная структура описывающая команду
         char type;
         /*
         TYPE:
@@ -224,7 +227,21 @@ struct command{
             19 - point
         */
 
-        struct data datatype;
+        bool UNSIGNED;  // bool
+        bool REGISTER;  // bool
+
+        char datatype;  // int
+        /*
+        TYPE:
+            0 - NONE
+            1 - CHAR
+            2 - SHORT
+            3 - INT
+            4 - LONG
+            5 - FLOAT
+            6 - DOUBLE
+            7 - VOID
+        */
 
         char *name; // if "if" than this condition
 
@@ -235,30 +252,29 @@ struct command{
 
 // ============= PARSER =============
 
-struct command *tmpcom = 0;
-
 struct command *parser(){
     // code - 'string' code
-    // struct command *tmpcom - THIS NULL
+    // даная функция должна обработать код, и выдать структуру описывующая одну команду
 
-    if( tmpcom==0 ){ tmpcom = malloc( sizeof( struct command ) ); }
-    cleararr( tmpcom, sizeof(tmpcom) );
-    tmpcom->name = 0;
+    struct command *tmpcom = 0; // временая структура для обработки команды
+    if( tmpcom==0 ){ tmpcom = LocalMalloc( sizeof( struct command ) ); } // выделение памяти под структуру
+    cleararr( tmpcom, sizeof(tmpcom) ); // заполняем структуру нулями (исправление ощибок при чтении)
+    tmpcom->name = 0; // какая то неизвесная ощибка, но если записать туда 0 то она исчезнет
 
-    uint i = 0;
+    uint i = 0; // для циклов while
 
     // ========= CODE =========
 
-    i = IgnoreSpace(code);
+    i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
     if( code+i >= EndCode ){ return 0; }
     code+=i;
 
-    if( code[0]==';' ){ return 0; }
+    if( code[0]==';' ){ return 0; } // если на входе ; то вернуть 0
 
     if( code[0]=='=' ){
         code++;
         tmpcom->type = TYPE_EQU;
-        tmpcom->name = "="; // ...
+        tmpcom->name = "="; // для уверености
         goto ExitParser;
     }
 
@@ -325,70 +341,97 @@ struct command *parser(){
 
     // DATATYPE
     while(1){
-        i = IgnoreSpace(code);
+        i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
         if( code+i>=EndCode ){ return 0; }
         code+=i;
 
         if( code > EndCode ){ return 0; }
 
-        if( cmpstr( code, "unsigned " ) ){ tmpcom->datatype.UNSIGNED  = true; code += 9; } else
-        if( cmpstr( code, "register " ) ){ tmpcom->datatype.REGISTER  = true; code += 9; } else {
+        if( cmpstr( code, "unsigned " ) ){ tmpcom->UNSIGNED  = true; code += 9; } else
+        if( cmpstr( code, "register " ) ){ tmpcom->REGISTER  = true; code += 9; } else {
             break;
         }
     }
 
     while(1){
-        i = IgnoreSpace(code);
+        i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
         if( code+i>=EndCode ){ return 0; }
         code+=i;
 
         if( code > EndCode ){ return 0; }
 
-        if( cmpstr( code, "char "  ) ){ tmpcom->datatype.datatype = DATATYPE_CHAR;   code += 5; } else
-        if( cmpstr( code, "short " ) ){ tmpcom->datatype.datatype = DATATYPE_SHORT;  code += 6; } else
-        if( cmpstr( code, "int "   ) ){ tmpcom->datatype.datatype = DATATYPE_INT;    code += 4; } else
-        if( cmpstr( code, "long "  ) ){ tmpcom->datatype.datatype = DATATYPE_LONG;   code += 5; } else
-        if( cmpstr( code, "float " ) ){ tmpcom->datatype.datatype = DATATYPE_FLOAT;  code += 6; } else
-        if( cmpstr( code, "double ") ){ tmpcom->datatype.datatype = DATATYPE_DOUBLE; code += 7; } else
-        if( cmpstr( code, "void "  ) ){ tmpcom->datatype.datatype = DATATYPE_VOID;   code += 5; } else {
-            if(tmpcom->datatype.datatype == 0){
-                tmpcom->datatype.datatype = DATATYPE_NONE;
+        if( cmpstr( code, "char "  ) ){ tmpcom->datatype = DATATYPE_CHAR;   code += 5; } else
+        if( cmpstr( code, "short " ) ){ tmpcom->datatype = DATATYPE_SHORT;  code += 6; } else
+        if( cmpstr( code, "int "   ) ){ tmpcom->datatype = DATATYPE_INT;    code += 4; } else
+        if( cmpstr( code, "long "  ) ){ tmpcom->datatype = DATATYPE_LONG;   code += 5; } else
+        if( cmpstr( code, "float " ) ){ tmpcom->datatype = DATATYPE_FLOAT;  code += 6; } else
+        if( cmpstr( code, "double ") ){ tmpcom->datatype = DATATYPE_DOUBLE; code += 7; } else
+        if( cmpstr( code, "void "  ) ){ tmpcom->datatype = DATATYPE_VOID;   code += 5; } else {
+            if(tmpcom->datatype == 0){
+                tmpcom->datatype = DATATYPE_NONE;
             }
             break;
         }
     }
 
-    i = IgnoreSpace(code);
+    i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
     if( code+i>=EndCode ){ return 0; }
     code+=i;
 
-    if( code > EndCode ){ return 0; }
+    if( code > EndCode ){ return 0; } // просто нужно убедица что мы не уленели в никуда
 
     // NAME
-    i = 0;
-    while(1){
+    i = 0; // это индекс кода для следующего цикла
+    while(1){ // игнорирует буквы и цифры, но на другие символы выходит из цикла
         if( code[i] == 0 ){ break; }
-        if( code+i > EndCode ){ return 0; }
+        if( code+i > EndCode ){ return 0; } // много проверок не бывает
         if( ('0'<=code[i] && code[i]<='9') || ('A'<=code[i] && code[i]<='Z')
            || ('a'<=code[i] && code[i]<='z') || code[i]=='_' || code[i]=='*' || code[i]=='&' ){ i++; } else { break; }
     }
 
-    tmpcom->name = copystr(code, i);
-    code+=i;
+    tmpcom->name = copystr(code, i); // копируем имя в структуру
+    code+=i; // перепрыгиваем имя
 
-    if( code > EndCode ){ return 0; }
+    if( cmpstr(tmpcom->name, "if") ){ // IF - недоделан
+        tmpcom->type = TYPE_IF; // это IF ))
+
+        i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
+        if( code+i>=EndCode ){ return 0; }
+        code+=i;                // ^^^
+
+        if( code[0]=='(' ){ // логично предположить, что после if должны ити круглые скобки
+            code++; // перепрыгиваем (
+            i = 0; // это индекс кода для следующего цикла
+            unsigned int count=1; // количество скобок
+            while(1){
+                if( code[i] == '(' ){ count++; } // это все для возможности пихать несколько условий в один if
+                if( code[i] == ')' ){ count--; }
+                if( code[i] == ')' && count <= 0 ){ break; } // ^^^
+                if( code[i] == '\n' ){ lines++; } // если новая строка то добавляем количество замеченых строк в переменую lines
+                if( code[i] == 0 ){ break; } // если конец строки то выходим
+                if( code+i > EndCode ){ return 0; } // убеждаемся что все в порядке
+                i++;
+            }
+            tmpcom->name = copystr(code, i);
+            code+=i+1;
+        } else { error(code, "I'm waiting ( )"); }
+        LAST_ID_IF++;
+        tmpcom->args = LAST_ID_IF;
+    }
+
+    if( code > EndCode ){ return 0; } // снова убедимся что все в порядке
 
     #ifdef DEBUG_PARSER
-    printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\n", (int)(tmpcom->datatype.UNSIGNED), (int)(tmpcom->datatype.REGISTER) );
-    printf("\t\tDATATYPE: %d\n\t\tNAME: \'%s\'\n", tmpcom->datatype.datatype, tmpcom->name);
+    printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\n", (int)(tmpcom->UNSIGNED), (int)(tmpcom->REGISTER) );
+    printf("\t\tDATATYPE: %d\n\t\tNAME: \'%s\'\n", tmpcom->datatype, tmpcom->name);
     #endif // DEBUG_PARSER
 
-    i = IgnoreSpace(code);
+    i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
     if( code+i>=EndCode ){ return 0; }
-    code+=i;
+    code+=i;            // ^^^
 
-    if( code[0] == '=' || code[0] == ';' ){
-        if( tmpcom->datatype.REGISTER || tmpcom->datatype.UNSIGNED || tmpcom->datatype.datatype ){
+    if( code[0] == '=' || code[0] == ';' ){ // если это переменая то какая именно
+        if( tmpcom->REGISTER || tmpcom->UNSIGNED || tmpcom->datatype ){
             tmpcom->type = TYPE_NEW_VAR;
         }else{
             tmpcom->type = TYPE_VAR;
@@ -401,29 +444,43 @@ struct command *parser(){
 
     ExitParser: // ============ EXIT PARSER ===============
     return tmpcom;
+
+    /*
+        сдесь код накладывался друг на друга по этому можо заблудица.
+
+        снадала был написан TYPE_NEW_VAR, TYPE_VAR.
+        потом вставлялся\дописывался код к єтому коду
+
+        очередь такая:
+        TYPE_NEW_VAR | TYPE_VAR (одним заходом, решалась все одним if)
+        TYPE_NUMBER
+        TYPE_STRING
+        TYPE_IF
+    */
 }
 
 int main(){
     EndCode = code + lenstr(code);
 
-    printf( "%d\n", (int)( parser(code) ) );
+    //printf( "%d\n", (int)( parser(code) ) );
 
-/*    for(uint i=0; i<4; i++){
-        struct command *tmpcom = parser();
+    for(uint i=0; i<4; i++){
+        struct command *tmpcom = parser( code );
 
         if( tmpcom == 0 ){
             printf("\t\t(null)\n");
         } else {
-            printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\n", (int)(tmpcom->datatype.UNSIGNED), (int)(tmpcom->datatype.REGISTER) );
-            printf("\t\tDATATYPE: %d\n\t\tNAME: ", tmpcom->datatype.datatype);
+            printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\n", (int)(tmpcom->UNSIGNED), (int)(tmpcom->REGISTER) );
+            printf("\t\tDATATYPE: %d\n\t\tNAME: ", tmpcom->datatype);
             if( tmpcom->name == 0 ){
                 printf("(null)\n");
             } else {
                 printf("\"%s\"\n", tmpcom->name);
             }
             printf("\t\tTYPE: %d\n\n", tmpcom->type);
+            printf("\t\tARGS: %d\n\n", tmpcom->args);
         }
-    }*/
+    }
 
     return 0;
 }
