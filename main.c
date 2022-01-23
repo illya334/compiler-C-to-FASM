@@ -26,51 +26,40 @@
     DATATYPE - только в TYPE_NEW_VAR
     *name - имя переменой
 */
-#define TYPE_FUNC_CALL      3  // НЕ РЕАЛЕЗОВАНО
+#define TYPE_FUNC_CALL      3
 /* TYPE_FUNC_CALL:
         *name - имя
         args - количество аргументов
-        *dopargs - масив указателей на масивы с структурой command
+        *dopargs - строка аргументов от ( до )
 */
 #define TYPE_IF             4
 /* TYPE_IF:
     *name = аргументы в виде строки
-    args - id
 
     берет следующую команду
  */
-#define TYPE_ELSE           5  // НЕ РЕАЛЕЗОВАНО
+#define TYPE_ELSE           5 // elseif - ЕСТЬ
 /* TYPE_ELSE:
-    args - id
-
     берет следующую команду
 */
-#define TYPE_FOR            6  // НЕ РЕАЛЕЗОВАНО
+#define TYPE_FOR            6
 /* TYPE_FOR:
     *name - условие
-    *dopargs - масив указателей на масивы с структурами command
+    *dopargs - строка на ( )
 
     берет следующую команду
 */
-#define TYPE_WHILE          7  // НЕ РЕАЛЕЗОВАНО
+#define TYPE_WHILE          7
 /* TYPE_WHILE
     *name - условие
 
     берет следующую команду
 */
-#define TYPE_START_DO_WHILE 8  // НЕ РЕАЛЕЗОВАНО
+#define TYPE_START_DO_WHILE 8
 /* TYPE_START_DO_WHILE:
-    args - id
     берет следующую команду
 */
-#define TYPE_END_DO_WHILE   9  // НЕ РЕАЛЕЗОВАНО
-/* TYPE_END_DO_WHILE:
-    *name - условие
-    args - id
-
-    берет следующую команду
-*/
-#define TYPE_NEW_FUNC       10 // НЕ РЕАЛЕЗОВАНО
+#define TYPE_NEW_FUNC       10
 /* TYPE_NEW_FUNC:
         DATATYPE
         *name - имя функции
@@ -78,15 +67,8 @@
 
         берет следующую команду
 */
-#define TYPE_START_BRACE    11 // НЕ РЕАЛЕЗОВАНО
-/* TYPE_START_BRACE:
-    args - id
-    берет следующие команды
-*/
-#define TYPE_END_BRACE      12 // НЕ РЕАЛЕЗОВАНО
-/* TYPE_END_BRACE:
-    args - id
-*/
+#define TYPE_START_BRACE    11
+#define TYPE_END_BRACE      12
 
 #define TYPE_STRING         13
 #define TYPE_NUMBER         14
@@ -100,7 +82,10 @@
 */
 
 #define TYPE_EQU            18
-#define TYPE_POINT          19 // НЕ РЕАЛЕЗОВАНО
+#define TYPE_POINT          19
+/* TYPE_POINT:
+    *name - name
+*/
 
 // uint, true, false, null, bool
 #define uint    unsigned int
@@ -115,7 +100,10 @@
 
 // ============= VAR ================
 
-char *code = "    if  ( ( abc > 5 ) || ( abc < 10 ) ) printf(\"hi\");"; // тестовый код
+char *code = "void foo( int a, int b ) printf(\"HI\");\n"
+             "int main(){\n"
+             "foo();"
+             "}"; // тестовый код
 char *EndCode; // адесс конца кода
 
 unsigned int lines = 0; // сколько строк насчитал
@@ -260,16 +248,35 @@ struct command *parser(){
     if( tmpcom==0 ){ tmpcom = LocalMalloc( sizeof( struct command ) ); } // выделение памяти под структуру
     cleararr( tmpcom, sizeof(tmpcom) ); // заполняем структуру нулями (исправление ощибок при чтении)
     tmpcom->name = 0; // какая то неизвесная ощибка, но если записать туда 0 то она исчезнет
+    tmpcom->args = 0;
+    tmpcom->dopArgs = 0;
 
     uint i = 0; // для циклов while
+    uint count = 0;
 
-    // ========= CODE =========
-
+    // ========= CODE =============================================================================
+    Start:
     i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
     if( code+i >= EndCode ){ return 0; }
     code+=i;
 
-    if( code[0]==';' ){ return 0; } // если на входе ; то вернуть 0
+    if( code[0]==';' ){ // если на входе ; то вернуца на старт программы и попробывать снова
+        code++;
+        goto Start;
+    }
+
+    if( code[0]=='{' ){
+        tmpcom->type = TYPE_START_BRACE;
+        code++;
+        tmpcom->name = "{";
+        goto ExitParser;
+    }
+    if( code[0]=='}' ){
+        tmpcom->type = TYPE_END_BRACE;
+        code++;
+        tmpcom->name = "}";
+        goto ExitParser;
+    }
 
     if( code[0]=='=' ){
         code++;
@@ -278,7 +285,7 @@ struct command *parser(){
         goto ExitParser;
     }
 
-    if( ('0'<=code[0] && code[0]<='9') || code[0] == '\'' ){ // IS NUMBER?
+    if( ('0'<=code[0] && code[0]<='9') || code[0] == '\'' ){ // IS NUMBER? =================================================
 
         if( code[0]=='0' && code[1]=='x' ){ // HEX
 
@@ -294,7 +301,7 @@ struct command *parser(){
             code+=i;
             goto ExitParser;
 
-        } else if( code[0] == '\'' ){ // CHAR
+        } else if( code[0] == '\'' ){ // CHAR =========================================================================
 
             tmpcom->type = TYPE_NUMBER;
             i = 1;
@@ -310,7 +317,7 @@ struct command *parser(){
             code+=i;
             goto ExitParser;
 
-        } else { // SINGLE NUMBER
+        } else { // SINGLE NUMBER ============================================================================
 
             tmpcom->type = TYPE_NUMBER;
             i = 0;
@@ -380,7 +387,7 @@ struct command *parser(){
 
     if( code > EndCode ){ return 0; } // просто нужно убедица что мы не уленели в никуда
 
-    // NAME
+    // NAME ========================================================================================================================
     i = 0; // это индекс кода для следующего цикла
     while(1){ // игнорирует буквы и цифры, но на другие символы выходит из цикла
         if( code[i] == 0 ){ break; }
@@ -392,17 +399,24 @@ struct command *parser(){
     tmpcom->name = copystr(code, i); // копируем имя в структуру
     code+=i; // перепрыгиваем имя
 
-    if( cmpstr(tmpcom->name, "if") ){ // IF - недоделан
+    if( code[0]==':' ){ // POINT =============================================================================================
+        tmpcom->type = TYPE_POINT;
+        code++;
+        goto ExitParser;
+    }
+
+    // проверка зарезервированых имен
+    if( cmpstr(tmpcom->name, "if") ){ // IF ==========================================================================================
         tmpcom->type = TYPE_IF; // это IF ))
 
         i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
         if( code+i>=EndCode ){ return 0; }
-        code+=i;                // ^^^
+        code+=i;
 
         if( code[0]=='(' ){ // логично предположить, что после if должны ити круглые скобки
             code++; // перепрыгиваем (
             i = 0; // это индекс кода для следующего цикла
-            unsigned int count=1; // количество скобок
+            count=1; // количество скобок
             while(1){
                 if( code[i] == '(' ){ count++; } // это все для возможности пихать несколько условий в один if
                 if( code[i] == ')' ){ count--; }
@@ -415,8 +429,98 @@ struct command *parser(){
             tmpcom->name = copystr(code, i);
             code+=i+1;
         } else { error(code, "I'm waiting ( )"); }
-        LAST_ID_IF++;
-        tmpcom->args = LAST_ID_IF;
+        goto ExitParser;
+
+    } else if( cmpstr(tmpcom->name, "else") ){ // ELSE ===================================================================
+        if( code[0]==' ' || code[0]=='{' ){
+            tmpcom->type = TYPE_ELSE;
+            goto ExitParser;
+        }
+    }
+    if( cmpstr(tmpcom->name, "elseif") ){ // ELSEIF ===================================================================
+        if( code[0]==' ' || code[0]=='(' ){
+            tmpcom->type = TYPE_ELSE;
+            code -= 2;
+            goto ExitParser;
+        }
+    }
+
+    if( cmpstr(tmpcom->name, "for") ){ // FOR ==========================================================================================
+        tmpcom->type = TYPE_FOR;
+
+        i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
+        if( code+i>=EndCode ){ return 0; }
+        code+=i;
+
+        if( code[0]=='(' ){
+            code++; // перепрыгиваем (
+            i = 0; // это индекс кода для следующего цикла
+            count=1; // количество скобок
+            while(1){
+                if( code[i] == '(' ){ count++; }
+                if( code[i] == ')' ){ count--; }
+                if( code[i] == ')' && count <= 0 ){ break; } // ^^^
+                if( code[i] == '\n' ){ lines++; } // если новая строка то добавляем количество замеченых строк в переменую lines
+                if( code[i] == 0 ){ break; } // если конец строки то выходим
+                if( code+i > EndCode ){ return 0; } // убеждаемся что все в порядке
+                i++;
+            }
+            tmpcom->name = copystr(code, i);
+            code+=i+1;
+        } else { error(code, "I'm waiting ( )"); }
+        goto ExitParser;
+
+    } else if( cmpstr(tmpcom->name, "while") ){ // WHILE ==========================================================================================
+        tmpcom->type = TYPE_WHILE;
+
+        i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
+        if( code+i>=EndCode ){ return 0; }
+        code+=i;
+
+        if( code[0]=='(' ){
+            code++; // перепрыгиваем (
+            i = 0; // это индекс кода для следующего цикла
+            count=1; // количество скобок
+            while(1){
+                if( code[i] == '(' ){ count++; }
+                if( code[i] == ')' ){ count--; }
+                if( code[i] == ')' && count <= 0 ){ break; } // ^^^
+                if( code[i] == '\n' ){ lines++; } // если новая строка то добавляем количество замеченых строк в переменую lines
+                if( code[i] == 0 ){ break; } // если конец строки то выходим
+                if( code+i > EndCode ){ return 0; } // убеждаемся что все в порядке
+                i++;
+            }
+            tmpcom->name = copystr(code, i);
+            code+=i+1;
+        } else { error(code, "I'm waiting ( )"); }
+        goto ExitParser;
+
+    } else if( cmpstr(code-2, "do ") ){ // DO ==========================================================================================
+        tmpcom->type = TYPE_START_DO_WHILE;
+        code++;
+        goto ExitParser;
+
+    }
+
+    i = IgnoreSpace(code); // эти три строчки просто перепрыгивают пропуски ( space, \n )
+    if( code+i>=EndCode ){ return 0; }
+    if( code[i] == '(' && tmpcom->datatype==0 ){ // CALL FUNC =====================================================================
+        code += i+1;
+        tmpcom->type = TYPE_FUNC_CALL;
+        i = 0; // это индекс кода для следующего цикла
+            count = 1; // количество скобок
+            while(1){
+                if( code[i] == '(' ){ count++; }
+                if( code[i] == ')' ){ count--; }
+                if( code[i] == ')' && count <= 0 ){ i++; break; } // ^^^
+                if( code[i] == '\n' ){ lines++; } // если новая строка то добавляем количество замеченых строк в переменую lines
+                if( code[i] == 0 ){ break; } // если конец строки то выходим
+                if( code+i > EndCode ){ return 0; } // убеждаемся что все в порядке
+                i++;
+            }
+       tmpcom->dopArgs = copystr(code, i);
+       code+=i;
+       goto ExitParser;
     }
 
     if( code > EndCode ){ return 0; } // снова убедимся что все в порядке
@@ -430,6 +534,25 @@ struct command *parser(){
     if( code+i>=EndCode ){ return 0; }
     code+=i;            // ^^^
 
+    if( code[0] == '(' ){ // NEW FUNC ======================================================================================
+        tmpcom->type = TYPE_NEW_FUNC;
+        code++;
+        i = 0; // это индекс кода для следующего цикла
+            count = 1; // количество скобок
+            while(1){
+                if( code[i] == '(' ){ count++; }
+                if( code[i] == ')' ){ count--; }
+                if( code[i] == ')' && count <= 0 ){ i++; break; } // ^^^
+                if( code[i] == '\n' ){ lines++; } // если новая строка то добавляем количество замеченых строк в переменую lines
+                if( code[i] == 0 ){ break; } // если конец строки то выходим
+                if( code+i > EndCode ){ return 0; } // убеждаемся что все в порядке
+                i++;
+            }
+        tmpcom->dopArgs = copystr(code, i);
+        code+=i;
+        goto ExitParser;
+    }
+
     if( code[0] == '=' || code[0] == ';' ){ // если это переменая то какая именно
         if( tmpcom->REGISTER || tmpcom->UNSIGNED || tmpcom->datatype ){
             tmpcom->type = TYPE_NEW_VAR;
@@ -437,7 +560,6 @@ struct command *parser(){
             tmpcom->type = TYPE_VAR;
         }
     }
-
     #ifdef DEBUG_PARSER
         printf("\t\tTYPE: %d\n", tmpcom->type);
     #endif // DEBUG_PARSER
@@ -449,13 +571,7 @@ struct command *parser(){
         сдесь код накладывался друг на друга по этому можо заблудица.
 
         снадала был написан TYPE_NEW_VAR, TYPE_VAR.
-        потом вставлялся\дописывался код к єтому коду
-
-        очередь такая:
-        TYPE_NEW_VAR | TYPE_VAR (одним заходом, решалась все одним if)
-        TYPE_NUMBER
-        TYPE_STRING
-        TYPE_IF
+        потом вставлялся\дописывался код к этому коду
     */
 }
 
@@ -464,21 +580,22 @@ int main(){
 
     //printf( "%d\n", (int)( parser(code) ) );
 
-    for(uint i=0; i<4; i++){
+    for(uint i=0; i<15; i++){
         struct command *tmpcom = parser( code );
 
         if( tmpcom == 0 ){
-            printf("\t\t(null)\n");
+            printf("(null)\n");
         } else {
-            printf("\tDEBUG:\n\t\tUNSIGNED: %d\n\t\tREGISTER: %d\n\n", (int)(tmpcom->UNSIGNED), (int)(tmpcom->REGISTER) );
-            printf("\t\tDATATYPE: %d\n\t\tNAME: ", tmpcom->datatype);
+            printf("UNSIGNED: %d\nREGISTER: %d\n\n", (int)(tmpcom->UNSIGNED), (int)(tmpcom->REGISTER) );
+            printf("DATATYPE: %d\nNAME: ", tmpcom->datatype);
             if( tmpcom->name == 0 ){
                 printf("(null)\n");
             } else {
                 printf("\"%s\"\n", tmpcom->name);
             }
-            printf("\t\tTYPE: %d\n\n", tmpcom->type);
-            printf("\t\tARGS: %d\n\n", tmpcom->args);
+            printf("TYPE: %d\n", tmpcom->type);
+            printf("ARGS: %d\n", tmpcom->args);
+            printf("DOPARGS: \"%s\"\n\n", tmpcom->dopArgs);
         }
     }
 
