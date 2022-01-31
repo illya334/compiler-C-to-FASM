@@ -114,7 +114,7 @@
 
 // ============= VAR ================
 
-char *code = "a[b]].\nc;"; // тестовый код
+char *code = "print( 123, 321 );"; // тестовый код
 
 unsigned int lines = 1; // сколько строк насчитал
 
@@ -215,6 +215,9 @@ struct command{ // основная структура описывающая команду
         char *dopArgs;
 };
 
+struct if_st{ // структура для условий
+
+};
 // ============= PARSER =============
 
 struct command *parser(){
@@ -276,6 +279,41 @@ struct command *parser(){
         tmpcom->type = TYPE_MATH;
         tmpcom->name = "/";
         code++;
+        goto ExitParser;
+    }
+
+    if( code[0]=='&' ){
+        tmpcom->type = TYPE_MATH;
+        tmpcom->name = "&";
+        code++;
+        goto ExitParser;
+    }
+
+    if( code[0]=='|' ){
+        tmpcom->type = TYPE_MATH;
+        tmpcom->name = "|";
+        code++;
+        goto ExitParser;
+    }
+
+    if( code[0]=='!' ){
+        tmpcom->type = TYPE_MATH;
+        tmpcom->name = "!";
+        code++;
+        goto ExitParser;
+    }
+
+    if( code[0]=='>' && code[1]=='>' ){
+        tmpcom->type = TYPE_MATH;
+        tmpcom->name = ">>";
+        code+=2;
+        goto ExitParser;
+    }
+
+    if( code[0]=='<' && code[1]=='<' ){
+        tmpcom->type = TYPE_MATH;
+        tmpcom->name = "<<";
+        code+=2;
         goto ExitParser;
     }
     // END MATH ========================================================================================
@@ -639,11 +677,11 @@ struct command *parser(){
                 if( code[i] == ')' ){ count--; }
                 if( code[i] == ')' && count <= 0 ){ i++; break; } // ^^^
                 if( code[i] == '\n' ){ lines++; } // если новая строка то добавляем количество замеченых строк в переменую lines
-                if( code[i] == 0 ){ break; } // если конец строки то выходим
+                if( code[i] == 0 ){ error(code+i, "I'm waiting ( )"); } // если конец строки то выходим
                 if( code+i > EndCode ){ return 0; } // убеждаемся что все в порядке
                 i++;
             }
-       if( count <= 0 ){ tmpcom->dopArgs = 0; }else{ tmpcom->dopArgs = copystr(code, i-1); }
+       tmpcom->dopArgs = copystr(code, i-1);
        code+=i;
        goto ExitParser;
     }
@@ -719,6 +757,7 @@ struct command **Loop1(unsigned int *len){
     *len = index;
     return com;
 }
+
 int main(){
 
     uint len;
@@ -727,7 +766,7 @@ int main(){
     printf("len: %d\n\n", len);
     for(uint i=0; i<len; i++){
         struct command *tmpcom = com[i];
-        printf("Unsigned: %d\nRegister: %d\nDataType: %d\nTYPE: %d\nName: %s\nDopArgs: %s\n\n", tmpcom->UNSIGNED, tmpcom->REGISTER, tmpcom->datatype, tmpcom->type, tmpcom->name, tmpcom->dopArgs);
+        printf("Unsigned: %d\nRegister: %d\nDataType: %d\nTYPE: %d\nName: \"%s\"\nARGS: %d\nDopArgs: \"%s\"\n\n", tmpcom->UNSIGNED, tmpcom->REGISTER, tmpcom->datatype, tmpcom->type, tmpcom->name, tmpcom->args, tmpcom->dopArgs);
     }
     LocalMalloc_Clear();
 
