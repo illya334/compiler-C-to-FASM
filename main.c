@@ -1,3 +1,7 @@
+// Транслятор Си в FASM (FASM/C)
+// Сделал Парфенов Илья (02.02.2022)
+// 
+
 #include <stdio.h> // printf
 #include <windows.h> // LocalAlloc, LocalReAlloc, LocalHandle, LocalFree
 
@@ -46,7 +50,7 @@ char *Local_malloc(uint len){ // выделить память и записат
 		);
 	}
 	
-	if(malloc_arr_struct[malloc_index_now].malloc_arr_index > malloc_arr_struct[malloc_index_now].malloc_arr_index_max){
+	if(malloc_arr_struct[malloc_index_now].malloc_arr_index >= malloc_arr_struct[malloc_index_now].malloc_arr_index_max){
 		malloc_arr_struct[malloc_index_now].malloc_arr_index_max+=20;
 		malloc_arr_struct[malloc_index_now].malloc_arr =
 		LocalReAlloc(
@@ -75,7 +79,7 @@ void Local_free(){ // очищает масив malloc_arr, и освобожд�
 		malloc_arr_struct[malloc_index_now].malloc_arr_index_max = 20;
 	}
 }
-bool swap(byte index){
+bool swap_malloc(byte index){
 	if(index > 20) return false;
 	if( malloc_init == false ) malloc_init_func();
 	malloc_index_now = index;
@@ -142,7 +146,7 @@ enum{ // DATATYPE
 
 // ========================================== CODE ==========================================
 
-/*
+/* TEST
 	int a = foo( foo2(), foo3() );
 	if( a > 10 && a < 20 ){
 		foo( foo2(), foo3() );
@@ -153,51 +157,92 @@ enum{ // DATATYPE
 	if( a == 1 ) foo();
 */
 
-char *parser0_arr = 0;
+char **parser0_arr = 0;
 uint parser0_arr_index = 0;
 uint i = 0;
 
 char *parser0(char *code){ // разбивает код на части
 	char *EndCode = code + lenstr(code);
 	uint parser0_arr_index_max = 20;
+	char *tmp;
+	char *lastCode = code;
+	byte lastCode_index = 0;
+	
+	// parser0_arr - масив адресов на строки
 	
 	if( parser0_arr == 0 ) parser0_arr = Local_malloc(parser0_arr_index_max);
 	
 	while(1){
-		if( parser0_arr_index > parser0_arr_index_max ){
+		if( parser0_arr_index >= parser0_arr_index_max ){ // проверка не выходим ли мы из масива
 			parser0_arr_index_max += 20;
 			parser0_arr = Local_remalloc(parser0_arr, parser0_arr_index_max);
 		}
 		
-		i = IgnoreSpace(code);
+		if( code > EndCode ) break; // выходим из цикла
+		if( code == lastCode ){
+			lastCode_index++;
+		} else {
+			lastCode_index = 0;
+			lastCode = code;
+		}
+		if(lastCode_index > 3) errorParser(code, "I dont know what is it");
+		
+		i = IgnoreSpace(code); // игнорируем пробел (\t) и \n
 		code += i;
 		if(code > EndCode) return parser0_arr;
 		
-		if( code[0]=='i' && code[1]=='f' ){
-			code += 2;
+		// можно оптемизировать, но я этого делать не буду)))
+		if(cmpstr(code, "if") || cmpstr(code, "for") || cmpstr(code, "while") || cmpstr(code, "elseif")){
+			tmp = code;
 			
-			i = IgnoreSpace(code);
-			code += i;
-			if(code > EndCode) break;
+			if(cmpstr(code, "if")) 		i=2; 	else
+			if(cmpstr(code, "for")) 	i=3; 	else
+			if(cmpstr(code, "while")) 	i=5; 	else
+			if(cmpstr(code, "elseif")) 	i=6;
+				
+			i += IgnoreSpace(code);
+			if(code+i > EndCode) break;
 			
-			if( code[0] == '(' ){
-				i = IgnoreSpace(code);
-				if( code[i]==')' ) errorParser(code, "In 'if' should be ");
-				i = 0;
-				int count = 1;
+			if( code[i] == '(' ){
+				i += IgnoreSpace(code+1);
+				if( code[i]==')' ) errorParser(code, "Now should be condition");
+				int count = 0;
 				while(1){
 					if( code+i > EndCode && count != 0 ) errorParser(code, "Im waiting ( )");
-					if( count <= 0 ) break;
 					if( code[i] == '(' ) count++;
 					if( code[i] == ')' ) count--;
+					if( count <= 0 ) break;
 					i++;
 				}
+				code+=i+1;
+				
+				parser0_arr[parser0_arr_index] = copystr(tmp, code-tmp);
+				parser0_arr_index++;
 				
 			}else{
-				errorParser(code, "Im waiting ( )");
+				if (!( (code[i] <= '0' || code[i] >= '9') || (code[i] >= 'a' && code[i] <= 'z') ||
+					(code[i] >= 'A' && code[i] <= 'Z') || code[i]=='_' )) 
+						errorParser(code, "Im waiting ( )");
 			}
+			
+		} else {
+			if( code[0] == '{' ){
+				parser0_arr[parser0_arr_index] = "{";
+				parser0_arr_index++;
+				code++;
+			} else if( code[0] == '}' ){
+				parser0_arr[parser0_arr_index] = "}";
+				parser0_arr_index++;
+				code++;
+			}
+			
+			i = 0;
+			while(1){
+				if( code+i > EndCode ) errorParser(code, "I left the text");
+				if( code[i] == ';' || code[] )
+			}
+			
 		}
-		
 	}
 	return parser0_arr;
 }
