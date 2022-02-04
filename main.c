@@ -116,6 +116,7 @@ void errorParser(char *code, char *errorText, bool bLines){ // Выводит о
     code = copystr(code, 0);
     code[10]='\0';
     if(bLines == true) printf("%d | ", lines+1);
+	
     for(uint i=0; i<=10; i++){
         if( code[i]==0 || code[i]=='\n' ){ break; }
         printf("%c", code[i]);
@@ -144,29 +145,62 @@ enum{ // DATATYPE
 	DATATYPE_DOUBLE,
 	DATATYPE_VOID
 };
-
-struct group{
+enum{ // TYPE
+	TYPE_NONE = 0,
+	TYPE_NEW_VAR,
+	TYPE_VAR,
+	TYPE_NEW_FUNC,
+	TYPE_CALL_FUNC,
+	TYPE_IF,
+	TYPE_ELSE,
+	TYPE_FOR,
+	TYPE_WHILE,
+	TYPE_DO,
+	TYPE_START_BRACE,
+	TYPE_END_BRACE,
+	TYPE_START_ROUND_BRACKETS,
+	TYPE_END_ROUND_BRACKETS,
+	TYPE_EQU,
+	TYPE_POINT,
+	TYPE_ARRAY,
+	TYPE_STRUCT_POINT, // .    (ABC.B)
+	TYPE_STRUCT_ARROW, // ->   (ABC->B)
 	
+	TYPE_STRING,
+	TYPE_NUMBER,
+	TYPE_MATH,
+	TYPE_TRANSFORM,
+	TYPE_VOID
+};
+
+// for parser
+struct parser0_struct{ // Первая часть 
+	char *text;
+	uint line;
+};
+struct parser1_struct{ // Вторая часть
+	uint line;
+	byte type;
+	byte datatype;
+	// 0b 0000 0000
+	//    ^^^^ ^^^^	-- для типа данных (char, short, int, long, float, double)
+	//	  ||||
+	//	для unsigned, register, long.
+	
+	char *name;
+	char *args;
 };
 
 // ========================================== CODE ==========================================
 
-/* TEST
-	int a = foo( foo2(), foo3() );
-	if( a > 10 && a < 20 ){
-		foo( foo2(), foo3() );
-		foo();
-		foo();
-	}
-	
-	if( a == 1 ) foo();
-*/
-
-char **parser0_arr = 0;
+struct parser0_struct *parser0_arr = 0;
 uint parser0_arr_index = 0;
 uint i = 0;
+uint index = 0;
 
-char **parser0(char *code){ // разбивает код на части
+void parser(char *code){ 
+	
+	// ================== Разбивает код на части ===================================
 	char *EndCode = code + lenstr(code);
 	uint parser0_arr_index_max = 20;
 	char *lastCode = code;
@@ -174,13 +208,13 @@ char **parser0(char *code){ // разбивает код на части
 	
 	// parser0_arr - масив адресов на строки
 	
-	if( parser0_arr == 0 ) parser0_arr = Local_malloc(parser0_arr_index_max);
+	if( parser0_arr == 0 ) parser0_arr = Local_malloc(sizeof(parser0_arr) * parser0_arr_index_max);
 	
-	while(1){
+	while(1){ // главный цикл
 		parser0_while_point:
 		if( parser0_arr_index >= parser0_arr_index_max ){ // проверка не выходим ли мы из масива
 			parser0_arr_index_max += 20;
-			parser0_arr = Local_remalloc(parser0_arr, parser0_arr_index_max);
+			parser0_arr = Local_remalloc(parser0_arr, sizeof(parser0_arr) * parser0_arr_index_max);
 		}
 		
 		if( code >= EndCode ) break; // выходим из цикла
@@ -198,32 +232,7 @@ char **parser0(char *code){ // разбивает код на части
 		
 			i = IgnoreSpace(code); // игнорируем пробел (\t) и \n
 			code += i;
-			if(code > EndCode) return parser0_arr;
-			
-			if( code[0]=='\"' ){
-				i=1;
-				while(1){
-					if(code+i > EndCode) errorParser(code, "Im waiting \" \"", true);
-					if(code[i]=='\"') break;
-					i++;
-				}
-				parser0_arr[parser0_arr_index] = copystr(code, i+1);
-				parser0_arr_index++;
-				code+=i+1;
-				goto parser0_while_point;
-			}
-			if( code[0]=='\'' ){
-				i=1;
-				while(1){
-					if(code+i > EndCode) errorParser(code, "Im waiting \' \'", true);
-					if(code[i]=='\'') break;
-					i++;
-				}
-				parser0_arr[parser0_arr_index] = copystr(code, i+1);
-				parser0_arr_index++;
-				code+=i+1;
-				goto parser0_while_point;
-			}
+			if(code > EndCode) break;
 			
 			// можно оптемизировать, но я этого делать не буду)))
 			if(cmpstr(code, "if") || cmpstr(code, "for") || cmpstr(code, "while") ||
@@ -242,13 +251,21 @@ char **parser0(char *code){ // разбивает код на части
 					int count = 0;
 					while(1){
 						if( code+i > EndCode && count != 0 ) errorParser(code, "Im waiting ( )", true);
+						if( code[i] == '\"' ){
+							i++;
+							while(1){
+								if(code+i>EndCode) errorParser(code, "Im waiting \" \"", true);
+								if(code[i]=='\"'){ i++; break; } else i++;
+							}
+						}
 						if( code[i] == '(' ) count++;
 						if( code[i] == ')' ) count--;
 						if( count <= 0 ) break;
 						i++;
 					}
 					i++;
-					parser0_arr[parser0_arr_index] = copystr(code, i);
+					parser0_arr[parser0_arr_index].text = copystr(code, i);
+					parser0_arr[parser0_arr_index].line = lines;
 					parser0_arr_index++;
 					
 					code += i;
@@ -261,12 +278,14 @@ char **parser0(char *code){ // разбивает код на части
 				
 			} else {
 				if( code[0] == '{' ){
-					parser0_arr[parser0_arr_index] = "{";
+					parser0_arr[parser0_arr_index].text = "{";
+					parser0_arr[parser0_arr_index].line = lines;
 					parser0_arr_index++;
 					code++;
 					goto parser0_while_point;
 				} else if( code[0] == '}' ){
-					parser0_arr[parser0_arr_index] = "}";
+					parser0_arr[parser0_arr_index].text = "}";
+					parser0_arr[parser0_arr_index].line = lines;
 					parser0_arr_index++;
 					code++;
 					goto parser0_while_point;
@@ -275,25 +294,46 @@ char **parser0(char *code){ // разбивает код на части
 				i = 0;
 				while(1){
 					if( code+i >= EndCode ) break;
-					if( code[i] == ';' || code[i] == '{' ) break;
+					if( code[i] == '\"' ){
+						i++;
+						while(1){
+							if(code+i>EndCode) errorParser(code, "Im waiting \" \"", true);
+							if(code[i]=='\"'){ i++; break; } else i++;
+						}
+					}
+					if( code[i] == ';' || code[i] == '{' || code[i] == '}' ) break; 
 					i++;
 				}
 				if( i==0 ) break;
-				parser0_arr[parser0_arr_index] = copystr(code, i+1);
+				parser0_arr[parser0_arr_index].text = copystr(code, i);
+				parser0_arr[parser0_arr_index].line = lines;
 				parser0_arr_index++;
 				
 				code += i;
 			}
 		}
 	}
-	return parser0_arr;
+	
+	// ==================================================================================
+	
+	#ifdef _DEBUG_PARSER0
+		printf("Index: %d\nLines: %d\n", parser0_arr_index, lines);
+		for(uint i=0; i < parser0_arr_index; i++)
+			printf("%d | %s\n", parser0_arr[i].line, parser0_arr[i].text);
+			
+		printf("\n================================\n");
+	#endif
+	
+	// ================================ Разбирает на команды ===========================
+	
+	for(index=0; index < parser0_arr_index; index++){
+		
+	}
+	
 }
 
 int main(){
-	parser0(" if() { foo(); foo2(); } else { foo1(); foo2() } ");
-	printf("Index: %d\nLines: %d\n", parser0_arr_index, lines);
-	for(uint i=0; i < parser0_arr_index; i++)
-		printf("\"%s\"\n", parser0_arr[i]);
+	parser(" if(\")\")\n{\n\tfoo();\n\tfoo2\"(asd;;;)\"();\n\"abc\"\n\"def\"\n} else {\n\tfoo1();\n\tfoo2()\n}\n");
 	
 	return 0;
 }
