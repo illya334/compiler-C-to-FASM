@@ -31,6 +31,7 @@ byte malloc_index_now = 0;
 
 // =============================== FUNCs =======================================
 
+// работа с памятью - выделение/освобождение/изменение размера/смена страницы
 void malloc_init_func(){ // MALLOC INIT
 	for(uint i=0; i<20; i++){
 		malloc_arr_struct[i].malloc_arr = 0;
@@ -88,7 +89,33 @@ bool swap_malloc(byte index){
 	malloc_index_now = index;
 	return true;
 }
+byte getSwapIndex(){
+	return malloc_index_now;
+}
 
+// работа с страницей
+char *Local_malloc_swap(byte index, uint len){
+	register byte swapIndex = getSwapIndex();
+	if( swap_malloc(index) == false ) return 0;
+	register char *tmp = Local_malloc(len);
+	swap_malloc(swapIndex);
+	return tmp;
+}
+char *Local_remalloc_swap(byte index, char *adr, uint len){
+	register byte swapIndex = getSwapIndex();
+	if( swap_malloc(index) == false ) return 0;
+	register char *tmp = Local_remalloc(adr, len);
+	swap_malloc(swapIndex);
+	return tmp;
+}
+void Local_free_swap(byte index){
+	register byte swapIndex = getSwapIndex();
+	if( swap_malloc(index) == false ) return 0;
+	Local_free();
+	swap_malloc(swapIndex);
+}
+
+// работа со строками
 unsigned int lenstr(char *str){ // получает длину строки ASCII
     register unsigned int len=0;
     while(1){
@@ -214,52 +241,52 @@ struct parser1_struct{ // Вторая часть
 uint i = 0;
 uint index = 0;
 
-struct parser1_struct *com;
+uint parser1_struct_Index = 0;
 
 struct parser1_struct *parser1(char *code){
+	if(code == 0 || code[0]==0) return 0;
+	
 	char *EndCode = lenstr(code) + code;
 	char *lastCode = code;
 	byte lastCodeIndex = 0;
 	
-	if(com==0) com = Local_malloc(sizeof(parser1_struct)*10);
-	uint ComIndex = 0;
+	struct parser1_struct *com = Local_malloc(sizeof(struct parser1_struct)*10);
 	uint ComMaxIndex = 10;
 	
-	com->line = 0;
-	com->type = 0;
-	com->datatype = 0;
-	com->name = 0;
-	com->args = 0;
+	com[parser1_struct_Index].line = 0;
+	com[parser1_struct_Index].type = 0;
+	com[parser1_struct_Index].datatype = 0;
+	com[parser1_struct_Index].name = 0;
+	com[parser1_struct_Index].args = 0;
 	
 	while(1){
 		
-		if(ComIndex > ComMaxIndex){
+		if(parser1_struct_Index > ComMaxIndex){
 			ComMaxIndex+=10;
-			Local_remalloc(com, sizeof(parser1_struct)*ComMaxIndex);
+			Local_remalloc(com, sizeof(struct parser1_struct)*ComMaxIndex);
 		}
 		
 		code += IgnoreSpace(code);
-		
 		if(code >= EndCode) break;
 		
-		if(lastCode == code) lastCodeIndex++; else lastCodeIndex = 0;
+		if(lastCode == code) lastCodeIndex++; else{ lastCodeIndex = 0; lastCode = code; }
 		if(lastCodeIndex > 3) return 0;
 			
 		switch(code[0]){
-			case '=': com->type = TYPE_EQU; 		 code++; goto EndWhileParser1; break;
-			case '.': com->type = TYPE_STRUCT_POINT; code++; goto EndWhileParser1; break;
-			case '{': com->type = TYPE_START_BRACE;  code++; goto EndWhileParser1; break;
-			case '}': com->type = TYPE_END_BRACE; 	 code++; goto EndWhileParser1; break;
-			case '-': if(code[1]=='>'){ com->type = TYPE_STRUCT_ARROW; code+=2; goto EndWhileParser1; } break;
+			case '=': com[parser1_struct_Index].type = TYPE_EQU; 		  code++; goto EndWhileParser1; break;
+			case '.': com[parser1_struct_Index].type = TYPE_STRUCT_POINT; code++; goto EndWhileParser1; break;
+			case '{': com[parser1_struct_Index].type = TYPE_START_BRACE;  code++; goto EndWhileParser1; break;
+			case '}': com[parser1_struct_Index].type = TYPE_END_BRACE; 	  code++; goto EndWhileParser1; break;
+			case '-': if(code[1]=='>'){ com[parser1_struct_Index].type = TYPE_STRUCT_ARROW; code+=2; goto EndWhileParser1; } break;
 		}
 			
 		while(1){ // unsigned, register
 			if(cmpstr(code, "unsigned ")){
 				code+=9;
-				com->datatype |= (1<<DATATYPE_UNSIGNED);
+				com[parser1_struct_Index].datatype |= (1<<DATATYPE_UNSIGNED);
 			}else if(cmpstr(code, "register ")){
 				code+=9;
-				com->datatype |= (1<<DATATYPE_REGISTER);
+				com[parser1_struct_Index].datatype |= (1<<DATATYPE_REGISTER);
 			}else
 				break;
 		}
@@ -269,54 +296,40 @@ struct parser1_struct *parser1(char *code){
 		while(1){ // char, short, int, long, float, double
 			if(cmpstr(code, "char ")){
 				code+=5;
-				com->datatype |= DATATYPE_CHAR;
+				com[parser1_struct_Index].datatype |= DATATYPE_CHAR;
 			}else if(cmpstr(code, "short ")){
 				code+=6;
-				com->datatype |= DATATYPE_SHORT;
+				com[parser1_struct_Index].datatype |= DATATYPE_SHORT;
 			}else if(cmpstr(code, "int ")){
 				code+=4;
-				com->datatype |= DATATYPE_INT;
+				com[parser1_struct_Index].datatype |= DATATYPE_INT;
 			}else if(cmpstr(code, "long ")){
 				code+=5;
-				com->datatype |= DATATYPE_LONG;
+				com[parser1_struct_Index].datatype |= DATATYPE_LONG;
 			}else if(cmpstr(code, "float ")){
 				code+=6;
-				com->datatype |= DATATYPE_FLOAT;
+				com[parser1_struct_Index].datatype |= DATATYPE_FLOAT;
 			}else if(cmpstr(code, "double ")){
 				code+=7;
-				com->datatype |= DATATYPE_DOUBLE;
+				com[parser1_struct_Index].datatype |= DATATYPE_DOUBLE;
 			}else
 				break;
 		}
 			
 		if(code >= EndCode) break;
-			
-		// GET NAME
-		i = 0;
-		while(1){
-			if(code+i > EndCode) break;
-			if( (code[i] >= '0' && code[i] <= '9') ||
-				(code[i] >= 'a' && code[i] <= 'z') ||
-				(code[i] >= 'A' && code[i] <= 'Z') ||
-				 code[i] == '_' ) i++; else break;
-		}
-		if(i==0) com->name = 0; else
-			com->name = copystr(code, i);
-		code+=i;
 		
-		code+=IgnoreSpace(code);
-		if(code > EndCode) break;
+		// проверка резервированых слов
 		
-		if(com->name > 0 && code[0]==':'){
-			code++;
-			com->type = TYPE_ELSE_LABEL_SHORT;
-			goto EndWhileParser1;
-		} else if(cmpstr(code, "if")){
-			com[ComIndex]
+		if(cmpstr(code, "if")){
+			com[parser1_struct_Index].type = TYPE_IF;
+			code += 2;
 			i = IgnoreSpace(code);
-			if(code+i > EndCode) break;
+			if(code+i > EndCode) errorParser(code, "'if' must be followed by parentheses ( )", true);
 			if(code[i]=='('){
 				code += i+1;
+				i = IgnoreSpace(code);
+				if(code+i > EndCode) errorParser(code, "I lost the parentheses ( )", true);
+				if(code[i] == ')') errorParser(code, "where condition?", true);
 				i=0;
 				uint count = 1;
 				while(1){
@@ -327,18 +340,70 @@ struct parser1_struct *parser1(char *code){
 					i++;
 				}
 				if(count > 0) errorParser(code, "I lost the parentheses ( )", true);
+				com[parser1_struct_Index].name = copystr(code, i);
 				code += i+1;
 			} else errorParser(code, "'if' must be followed by parentheses ( )", true);
-		}else if( com->datatype > 0 && com->name > 0 ){ // IS VAR\NEW VAR\NONE?
-			com->type = TYPE_NEW_VAR;
-		}else if(com->name > 0){
-			com->type = TYPE_VAR;
+			goto EndWhileParser1;
+		}
+			
+		// GET NAME
+		i = 0;
+		while(1){
+			if(code+i > EndCode) break;
+			if( (code[i] >= '0' && code[i] <= '9') ||
+				(code[i] >= 'a' && code[i] <= 'z') ||
+				(code[i] >= 'A' && code[i] <= 'Z') ||
+				 code[i] == '_' ) i++; else break;
+		}
+		if(i==0) com[parser1_struct_Index].name = 0; else
+			com[parser1_struct_Index].name = copystr(code, i);
+		code+=i;
+		
+		code+=IgnoreSpace(code);
+		if(code > EndCode) break;
+		
+		if(com[parser1_struct_Index].name > 0 && code[0]==':'){
+			code++;
+			com[parser1_struct_Index].type = TYPE_ELSE_LABEL_SHORT;
+			goto EndWhileParser1;
+		} else if( com[parser1_struct_Index].datatype > 0 && com[parser1_struct_Index].name > 0 ){ // IS VAR\NEW VAR\NONE?
+			com[parser1_struct_Index].type = TYPE_NEW_VAR;
+		} else if(com[parser1_struct_Index].name > 0 && code[0]=='('){ // call func / create func
+			if(com[parser1_struct_Index].datatype > 0) // create func
+				com[parser1_struct_Index].type = TYPE_NEW_FUNC;
+			else
+				com[parser1_struct_Index].type = TYPE_CALL_FUNC;
+			
+			code += i+1;
+			i = IgnoreSpace(code);
+			if(code+i > EndCode) errorParser(code, "I lost the parentheses ( )", true);
+			if(code[i] == ')'){
+				com[parser1_struct_Index].name = 0;
+			}else{
+				i=0;
+				uint count = 1;
+				while(1){
+					if(code+i > EndCode) break;
+					if(code[i]=='(') count++;
+					if(code[i]==')') count--;
+					if(count <= 0) break;
+					i++;
+				}
+				if(count > 0) errorParser(code, "I lost the parentheses ( )", true);
+				com[parser1_struct_Index].name = copystr(code, i);
+				code += i+1;
+			}
+				
+			goto EndWhileParser1;
+		}else if(com[parser1_struct_Index].name > 0){
+			com[parser1_struct_Index].type = TYPE_VAR;
 		}else{
-			com->type = TYPE_NONE;
+			com[parser1_struct_Index].type = TYPE_NONE;
 		}
 		
 		EndWhileParser1:
-		ComIndex++;
+		
+		parser1_struct_Index++;
 	}
 	return com;
 }
@@ -480,76 +545,82 @@ void parser(char *code){
 	uint parser1_arr_index_max = 20;
 	
 	for(index=0; index < parser0_arr_index; index++){
+		lines = parser0_arr[index].line;
 		
-		parser1(parser0_arr[index].text);
+		struct parser1_struct *com =  parser1(parser0_arr[index].text);
+		
+		if(com == 0) errorParser(parser0_arr[index].text, "I dont know what is it...", false);
 		
 		#define _DEBUG_PARSER1
 		
 		#ifdef _DEBUG_PARSER1
-		printf("UNSIGNED: ");
-		printf( (com->datatype & (1<<DATATYPE_UNSIGNED)) ? "TRUE" : "FALSE" );
-		
-		printf("\n");
-		
-		printf("REGISTER: ");
-		printf( (com->datatype & (1<<DATATYPE_REGISTER)) ? "TRUE" : "FALSE" );
-		
-		printf("\n");
-	
-		com->datatype <<= 4;
-		com->datatype >>= 4;
+		for(i=0; i<parser1_struct_Index; i++){
+			printf("UNSIGNED: ");
+			printf( (com[i].datatype & (1<<DATATYPE_UNSIGNED)) ? "TRUE" : "FALSE" );
 			
-		printf("DATATYPE: ");
-		switch(com->datatype){
-			case DATATYPE_CHAR: 	printf("CHAR"); 			break;
-			case DATATYPE_SHORT: 	printf("SHORT"); 			break;
-			case DATATYPE_INT: 		printf("INT"); 				break;
-			case DATATYPE_LONG: 	printf("LONG"); 			break;
-			case DATATYPE_FLOAT: 	printf("FLOAT"); 			break;
-			case DATATYPE_DOUBLE: 	printf("DOUBLE"); 			break;
-			default: 				printf("NONE");				break;
-		}
-		printf("\n");
-		
-		printf("TYPE: ");
-		switch(com->type){
-			case TYPE_NEW_VAR: 		printf("TYPE_NEW_VAR"); 	break;
-			case TYPE_VAR: 			printf("TYPE_VAR"); 		break;
-			case TYPE_NEW_FUNC: 	printf("TYPE_NEW_FUNC"); 	break;
-			case TYPE_CALL_FUNC: 	printf("TYPE_CALL_FUNC"); 	break;
-			case TYPE_IF: 			printf("TYPE_IF"); 			break;
-			case TYPE_ELSE: 		printf("TYPE_ELSE"); 		break;
-			case TYPE_FOR: 			printf("TYPE_FOR"); 		break;
-			case TYPE_WHILE: 		printf("TYPE_WHILE"); 		break;
-			case TYPE_DO: 			printf("TYPE_DO"); 			break;
-			case TYPE_START_BRACE: 	printf("TYPE_START_BRACE"); break;
-			case TYPE_END_BRACE: 	printf("TYPE_END_BRACE"); 	break;
-			case TYPE_START_ROUND_BRACKETS: printf("TYPE_START_ROUND_BRACKETS"); break;
-			case TYPE_END_ROUND_BRACKETS: 	printf("TYPE_END_ROUND_BRACKETS"); 	 break;
-			case TYPE_EQU: 			printf("TYPE_EQU"); 		break;
-			case TYPE_LABEL: 		printf("TYPE_LABEL"); 		break;
-			case TYPE_ARRAY: 		printf("TYPE_ARRAY"); 		break;
-			case TYPE_STRUCT_POINT: printf("TYPE_STRUCT_POINT");break;
-			case TYPE_STRUCT_ARROW: printf("TYPE_STRUCT_ARROW");break;
-			case TYPE_STRING: 		printf("TYPE_STRING"); 		break;
-			case TYPE_NUMBER: 		printf("TYPE_NUMBER"); 		break;
-			case TYPE_MATH: 		printf("TYPE_MATH"); 		break;
-			case TYPE_TRANSFORM: 	printf("TYPE_TRANSFORM"); 	break;
-			case TYPE_VOID: 		printf("TYPE_VOID"); 		break;
-			default: 				printf("NONE"); 			break;
-		}
-		printf("\n");
-		
-		printf("NAME: %s\n", com->name);
+			printf("\n");
 			
-		printf("\n");
+			printf("REGISTER: ");
+			printf( (com[i].datatype & (1<<DATATYPE_REGISTER)) ? "TRUE" : "FALSE" );
+			
+			printf("\n");
+		
+			com[i].datatype <<= 4;
+			com[i].datatype >>= 4;
+				
+			printf("DATATYPE: ");
+			switch(com[i].datatype){
+				case DATATYPE_CHAR: 	printf("CHAR"); 			break;
+				case DATATYPE_SHORT: 	printf("SHORT"); 			break;
+				case DATATYPE_INT: 		printf("INT"); 				break;
+				case DATATYPE_LONG: 	printf("LONG"); 			break;
+				case DATATYPE_FLOAT: 	printf("FLOAT"); 			break;
+				case DATATYPE_DOUBLE: 	printf("DOUBLE"); 			break;
+				default: 				printf("NONE");				break;
+			}
+			printf("\n");
+			
+			printf("TYPE: ");
+			switch(com[i].type){
+				case TYPE_NEW_VAR: 		printf("TYPE_NEW_VAR"); 	break;
+				case TYPE_VAR: 			printf("TYPE_VAR"); 		break;
+				case TYPE_NEW_FUNC: 	printf("TYPE_NEW_FUNC"); 	break;
+				case TYPE_CALL_FUNC: 	printf("TYPE_CALL_FUNC"); 	break;
+				case TYPE_IF: 			printf("TYPE_IF"); 			break;
+				case TYPE_ELSE: 		printf("TYPE_ELSE"); 		break;
+				case TYPE_FOR: 			printf("TYPE_FOR"); 		break;
+				case TYPE_WHILE: 		printf("TYPE_WHILE"); 		break;
+				case TYPE_DO: 			printf("TYPE_DO"); 			break;
+				case TYPE_START_BRACE: 	printf("TYPE_START_BRACE"); break;
+				case TYPE_END_BRACE: 	printf("TYPE_END_BRACE"); 	break;
+				case TYPE_START_ROUND_BRACKETS: printf("TYPE_START_ROUND_BRACKETS"); break;
+				case TYPE_END_ROUND_BRACKETS: 	printf("TYPE_END_ROUND_BRACKETS"); 	 break;
+				case TYPE_EQU: 			printf("TYPE_EQU"); 		break;
+				case TYPE_ELSE_LABEL_SHORT:printf("TYPE_LABEL"); 	break;
+				case TYPE_ARRAY: 		printf("TYPE_ARRAY"); 		break;
+				case TYPE_STRUCT_POINT: printf("TYPE_STRUCT_POINT");break;
+				case TYPE_STRUCT_ARROW: printf("TYPE_STRUCT_ARROW");break;
+				case TYPE_STRING: 		printf("TYPE_STRING"); 		break;
+				case TYPE_NUMBER: 		printf("TYPE_NUMBER"); 		break;
+				case TYPE_MATH: 		printf("TYPE_MATH"); 		break;
+				case TYPE_TRANSFORM: 	printf("TYPE_TRANSFORM"); 	break;
+				case TYPE_VOID: 		printf("TYPE_VOID"); 		break;
+				default: 				printf("NONE"); 			break;
+			}
+			printf("\n");
+			
+			printf("NAME: %s\n", com[i].name);
+				
+			printf("\n");
+		}
+		printf("\n========================\n");
 		#endif
 	}
 	
 }
 
 int main(){
-	parser("abc = . ->");
+	parser("if(a)\n\tabc( a, b, c );");
 	
 	return 0;
 }
