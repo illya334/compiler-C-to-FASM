@@ -23,14 +23,15 @@
   * 
   * Вы можете спросить зачем я изобретал вилосипед? Свой компилятор?
   * - На момент написания компилятора я не нашол чтото подобное.
-  * Я хотел чтобы пользователь смог генерировать не критичный код к скорости.
+  * Я хотел чтобы пользователь смог генерировать код нужной разрядности и задачи.
+  * Проблема того же компилятора GNU в том что, он создан под конкретную ОС и разрядность.
   * И возможно когда нибудь я сделаю ОС, но это не точно.
   * 
   * И вообще это все развлечения...
   */
 
-#include <stdio.h> // printf, _wfopen, 
-#include <stdlib.h> // malloc
+#include <stdio.h> // printf, _wfopen, fgetwc
+#include <stdlib.h> // malloc, realloc, free
 #include <stdint.h> // uint8_t
 #include <wchar.h> // wchar_t
 
@@ -55,19 +56,26 @@ uint Lines = 0;
 struct st_alloc{ // структура одной страницы
 	void **arrays; // масив адресов
 	uint arrIndex; // индекс масива
-	uint MaxArrIndex; // размер масива
+	uint MaxArrIndex; // размер масива (MaxArrIndex_def)
 };
+
+#define MaxArrIndex_def 20 // стандартное максимальное число зарезервированых адресов
 
 struct st_alloc *lists = 0; // масив страниц
 byte IndexList = 0; // Индекс текущей страницы
 bool Local_init_bool = false; // Была ли инициализация страниц?
 
-// =============================== FUNCs =======================================
+// ========================================== FUNCs =====================================================
+
+void setmem(char *buf, uint count, char ch){
+	for(uint i=0; i<count; i++)
+		buf[i] = ch;
+}
 
 // макрос чтобы сократить код
 #define nowList lists[IndexList]
 
-void error(char *str){ // тупо вывод ощибки
+void error(char *str){ // тупо вывод ощибки ASCII
 	printf("Error: %s\n", str);
 	exit(1);
 }
@@ -75,24 +83,31 @@ void error(char *str){ // тупо вывод ощибки
 // работа с памятью - выделение/освобождение/изменение размера/смена страницы
 void Local_init(){
 	if(lists==0) lists = malloc( sizeof(struct st_alloc) * MAX_LOCAL_ALLOC_LISTS );
-	for(uint i=0; i<MAX_LOCAL_ALLOC_LISTS; i++){
-		nowList.arrays = malloc( sizeof(void*) * 20 );
-		nowList.arrIndex = 0;
-		nowList.MaxArrIndex = 20;
-	}
+	setmem(lists, sizeof(struct st_alloc) * MAX_LOCAL_ALLOC_LISTS, 0);
 	Local_init_bool = true;
 }
 char *Local_alloc(uint len){ // выделить память и записать адресс в масив, чтобы потом одной командой почистить
 	if(Local_init_bool == false) Local_init();
+	
+	if(nowList.arrays == 0){
+		nowList.arrays = malloc( sizeof(void*) * MaxArrIndex_def );
+		setmem(nowList.arrays, MaxArrIndex_def, 0);
+	}
+	
+	if(nowList.MaxArrIndex == 0)
+		nowList.MaxArrIndex = MaxArrIndex_def;
+	
 	if(nowList.arrIndex >= nowList.MaxArrIndex){
-		nowList.MaxArrIndex += 20;
+		nowList.MaxArrIndex += MaxArrIndex_def;
 		nowList.arrays = realloc(nowList.arrays, nowList.MaxArrIndex);
+		
+		setmem( nowList.arrays + nowList.arrIndex, sizeof(void*) * (nowList.MaxArrIndex - nowList.arrIndex), 0 );
 	}
 	
 	char *tmp = malloc(len);
 	if(tmp == 0)
 		error("Memory allocation error.");
-		
+	
 	nowList.arrays[nowList.arrIndex] = tmp;
 	nowList.arrIndex++;
 	
@@ -101,9 +116,20 @@ char *Local_alloc(uint len){ // выделить память и записат�
 	
 	return tmp;
 }
-void Local_free(){ // очищает масив malloc_arr, и освобождает память (чистит страницу)
+void Local_free(void *adr){ // если не делать проверку то програма вылетает
+	for(uint i=0; i<nowList.arrIndex; i++){
+		if(adr == nowList.arrays[i] && nowList.arrays[i] != 0){
+			nowList.arrays[i] = 0;
+			free(adr);
+			break;
+		}
+	}
+}
+void Local_free_list(){ // очищает масив arrays, и освобождает память (чистит страницу)
 	for(uint i=0; i<nowList.arrIndex; i++)
-		free(nowList.arrays[nowList.arrIndex]);
+		Local_free( nowList.arrays[i] );
+	realloc( nowList.arrays, sizeof(void*) * MaxArrIndex_def );
+	nowList.MaxArrIndex = MaxArrIndex_def;
 	nowList.arrIndex = 0;
 }
 bool swap(byte index){ // смена страницы
@@ -147,7 +173,7 @@ wchar_t *copystr(wchar_t *start, uint len){ // создает новый мас�
     return buf;
 }
 wchar_t *addstr(wchar_t *str1, wchar_t *str2){ // объединяет строки
-	wchar_t *outstr = (wchar_t*)Local_alloc( ( lenstr(str1)+lenstr(str2) )*sizeof(wchar_t)+1 );
+	wchar_t *outstr = (wchar_t*)Local_alloc( ( lenstr(str1)+lenstr(str2)+1 )*sizeof(wchar_t) );
 	register uint i;
 	register uint osi = 0; // OutStrIndex
 	for(i=0; i<lenstr(str1); i++){
@@ -164,7 +190,7 @@ wchar_t *formatStr(wchar_t *str){ // чистит строку от пробел
 	if(str == 0) return 0;
 	str = copystr(str, lenstr(str)); // копируем строку для табуляции
 	wchar_t *EndStr = str + lenstr(str);
-	wchar_t *OutStr = (wchar_t*)Local_alloc( lenstr(str)*sizeof(wchar_t) );
+	wchar_t *OutStr = (wchar_t*)Local_alloc( (lenstr(str)+1)*sizeof(wchar_t) );
 	uint OutStrInd = 0;
 	uint i = 0;
 	uint j = 0;
@@ -219,7 +245,8 @@ wchar_t *formatStr(wchar_t *str){ // чистит строку от пробел
 	
 	OutStr[OutStrInd] = 0;
 	
-	free(str);
+	Local_free(str);
+	
 	return OutStr;
 }
 
@@ -251,6 +278,8 @@ void errorParser(wchar_t *code, wchar_t *errorText){ // вывод ощибок 
 	exit(1);
 }
 
+// ========================================== CODE ================================================================
+
 struct def{ // структура директив
 	wchar_t *name; // имя макроса
 	wchar_t *value; // значение (необязательно)
@@ -260,7 +289,7 @@ struct def{ // структура директив
 
 struct def *defines = 0;
 uint defIndex = 0;
-#define MaxDefIndex 100 // максимальное количество директив
+uint MaxDefIndex = 20; // максимальное количество директив
 #define MaxDefArgs 10 // максимум аргументов для директив
 
 /*
@@ -278,29 +307,29 @@ uint defIndex = 0;
 uint i = 0;
 uint j = 0;
 uint tmp2;
+wchar_t **tmpArgs;
 
-wchar_t *openfile(wchar_t *path){ // открывает файл и копирует содержимое в масив
+wchar_t *openfile(wchar_t *path, bool retError){ // открывает файл и копирует содержимое в масив
 	FILE *fp = _wfopen(path, L"rt");
-	wchar_t *buf = Local_alloc(100);
-	uint MaxIndex = 100;
-	i=0;
+	if(fp == NULL && retError == false) error("I can't open the file. Maybe invalid path."); else
+	if(fp == NULL && retError == true) return NULL;
+	
+	wchar_t *buf = Local_alloc( ( 1000 + 1 ) * sizeof(wchar_t) );
+	uint MaxIndex = 1000;
+	
+	uint tmpI=0;
 	while(1){
-		if(i >= MaxIndex){
+		if(tmpI >= MaxIndex){
 			MaxIndex+=1000;
-			
-			wchar_t *buf2 = Local_alloc(MaxIndex);
-			for(j=0; j<i; j++)
-				buf2[j] = buf[j];
-			free(buf);
-			buf = buf2;
+			buf = realloc(buf, (MaxIndex + 1) * sizeof(wchar_t) );
 		}
-		buf[i] = fgetwc(fp);
+		buf[tmpI] = fgetwc(fp);
 		
-		if(buf[i]==0xFFFF) break;
+		if( buf[tmpI] == 0xFFFF ) break;
 		
-		i++;
+		tmpI++;
 	}
-	buf[i]=0;
+	buf[tmpI] = 0;
 	return buf;
 }
 
@@ -336,26 +365,31 @@ void _if_loop(wchar_t *code){ // просто подумал что если ч�
 	}
 }
 
-wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
+wchar_t *_parser_withOutLoop(wchar_t *code){
 	if(code[0]==0 || code==0) error("'_parser_withOutLoop' get zero."); // заглужка
 	Lines = 0;
-    wchar_t *OutCode = (wchar_t*)Local_alloc(lenstr(code)); // сюда згружаеца обработаный код
-    uint OutCodeIndex = 0;
+	uint OutCodeIndex = 0;
+	uint MaxOutCodeIndex = lenstr(code);
+    wchar_t *OutCode = (wchar_t*)Local_alloc( (MaxOutCodeIndex+1)*sizeof(wchar_t) ); // сюда згружаеца обработаный код
 	
 	if(defines==0) // при запуске транслятора/компилятора все переменые (по идеи) должны быть в 0
-		defines = (struct def*)Local_alloc(sizeof(struct def)*MaxDefIndex);
+		defines = (struct def*)Local_alloc( sizeof(struct def) * MaxDefIndex );
 	
     // local variables
 	uint u = 0;
 	uint h = 0;
 	wchar_t *tmp;
-	wchar_t **tmpArgs = (wchar_t**)Local_alloc( sizeof(wchar_t*)*MaxDefArgs ); // в момент вставки макроса, если он с аргументами
+	if(tmpArgs == 0)
+		tmpArgs = (wchar_t**)Local_alloc( sizeof(wchar_t*) * MaxDefArgs ); // в момент вставки макроса, если он с аргументами
 	
 	code = formatStr(code); // чистим все лишние пробелы и табуляцию
-	wchar_t *EndCode = code + lenstr(code)*sizeof(wchar_t);
+	wchar_t *EndCode = code + lenstr(code);
 	
     while(code<EndCode && code[0]!=0){
-		if(code[0]==0) break;
+		if(OutCodeIndex >= MaxOutCodeIndex){
+			MaxOutCodeIndex *= 2;
+			OutCode = (wchar_t*)realloc( OutCode, (MaxOutCodeIndex+1)*sizeof(wchar_t) );
+		}
 		
 		if( (code[0]>=L' ' && code[0]<=L'/') || (code[0]>=L':' && code[0]<=L'@') || // все эти символы вызывают ощибки в парсере, по этому я их игнорирую
 			(code[0]>=L'[' && code[0]<=L'^') || (code[0]>=L'{' && code[0]<=L'~') ||
@@ -381,25 +415,41 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 		code += i;
 		
 		if(cmpstr(tmp, L"include") && code[-8]==L'#'){ // INCLUDE =====================================
+			OutCodeIndex--; // убераем #
+			
 			for(i=0; (i<lenstr(code) && code[i]!=0); i++) // игнорируем пробелы после слова
 				if(code[i]!=L' ') break;
 			code+=i;
 			
-			if(code[0]==L'<' || code[0]==L'\"'){
+			if(code[0]==L'<' || code[0]==L'\"'){ // у данного компилятора нет встроеных библиотек, так что < > и " " работают одинаково
+				
 				if(code[0]==L'\"') j=1; else j=0;
 				code++;
-				for(i=0; (i+code<EndCode && code[i]!=0); i++){
+				for(i=0; (i+code<EndCode && code[i]!=0); i++){ // get path
 					if(code[i]==L'\"' && j==0){ j=1; continue; }
 					if(code[i]==L'\'' && j==0){ j=2; continue; }
-					if( (code[i]==L'\"' && j==1) || (code[i]==L'\'' && j==2) ){ j=0; continue; }
+					if( (code[i]==L'\"' && j==1) || (code[i]==L'\'' && j==2) ) j=0;
 					if( (code[i]==L'<' || code[i]==L'\"') && j==0 ) break;
 				}
-				tmp = openfile( copystr(code, i) );
-				if(tmp==0)
-					errorParser(code, L"I can't open the file. Invalid path/name.");
-				else{
+				
+				register wchar_t *tmp_ofp = copystr(code, i);
+				tmp = openfile( tmp_ofp, true );
+				Local_free(tmp_ofp);
+				
+				if(tmp==0) errorParser(code, L"I can't open the file. Invalid path/name.");
+
+				code += i+1;
+				for(i=0; i<lenstr(tmp); i++){ // записываем содержимое файла
+					if(OutCodeIndex+i >= MaxOutCodeIndex){
+						MaxOutCodeIndex *= 2;
+						OutCode = (wchar_t*)realloc( OutCode, (MaxOutCodeIndex+1)*sizeof(wchar_t) );
+					}
 					
+					OutCode[ OutCodeIndex + i ] = tmp[i];
 				}
+				OutCodeIndex+=i;
+				continue;
+				
 			} else
 				errorParser(code, L"I wait '<' or '\"' after '#include'.");
 			
@@ -419,8 +469,10 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 			if(nowDef.indexArgs > MaxDefArgs)
 				errorParser(code-i, addstr( L"Too much argumets for define: ", tmp ));
 					
-			if(defIndex > MaxDefIndex)
-				errorParser(code-i, addstr( L"Too much defines: ", tmp ));
+			if(defIndex >= MaxDefIndex){
+				MaxDefIndex += 20;
+				realloc(defines, MaxDefIndex * sizeof(struct def));
+			}
 					
 			nowDef.name = tmp;
 					
@@ -437,7 +489,7 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 					for(i=0; (i+code<EndCode && code[i]!=0); i++)
 						if(code[i]==0 || code[i]==L',' || code[i]==L')') break;
 					tmp = copystr(code, i);
-					code+=i;
+					code += i;
 									
 					if( cmpformat(tmp)==false ) // Неправильное (возможно) имя аргумента для директивы
 						errorParser(code-i, addstr( L"Invalid argument name for define: ", tmp ));
@@ -446,7 +498,7 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 					nowDef.indexArgs++;
 				}
 			}
-					
+			
 			if(code[0]==L'\n'){ nowDef.value = 0; defIndex++; continue; }
 				
 			for(i=0; (i+code<EndCode && code[i]!=0); i++) // Get value
@@ -476,9 +528,9 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 				
 			for(i=0; i<defIndex; i++){ // если есть такое имя то уничтожаем
 				if(cmpstr(tmp, defines[i].name)){
-					defines[i].name = 0;
-					defines[i].value = 0;
-					defines[i].args = 0;
+					if(defines[i].name != 0) { Local_free(defines[i].name); defines[i].name = 0; }
+					if(defines[i].value != 0) { Local_free(defines[i].value); defines[i].value = 0; }
+					if(defines[i].args != 0) { Local_free(defines[i].args); defines[i].args = 0; }
 					defines[i].indexArgs = 0;
 				}
 			}
@@ -497,10 +549,16 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 			tmp2 = 0;
 			_if_loop(code);
 				
-			if( ( ifdefined(tmp) && h==0 ) || ( !ifdefined(tmp) && h==1 ) ){ // if defined
-				if(i>0){
-					for(j=0; j<i; j++)
+			if( ( ifdefined(tmp) && h==0 ) || ( !ifdefined(tmp) && h==1 ) ){ // if defined (not)
+				if(i>0){ // копируем все содержимое if
+					for(j=0; j<i; j++){
+						if(OutCodeIndex+j >= MaxOutCodeIndex){
+							MaxOutCodeIndex *= 2;
+							OutCode = (wchar_t*)realloc( OutCode, (MaxOutCodeIndex+1)*sizeof(wchar_t) );
+						}
+						
 						OutCode[OutCodeIndex+j] = code[j];
+					}
 					OutCodeIndex += j;
 					code+=i;
 				}
@@ -517,8 +575,14 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 					_if_loop(code);
 					
 					if(i>0){
-						for(j=0; j<i; j++)
+						for(j=0; j<i; j++){
+							if(OutCodeIndex+j >= MaxOutCodeIndex){
+								MaxOutCodeIndex *= 2;
+								OutCode = (wchar_t*)realloc( OutCode, (MaxOutCodeIndex+1)*sizeof(wchar_t) );
+							}
+							
 							OutCode[OutCodeIndex+j] = code[j];
+						}
 						OutCodeIndex += j;
 						code+=i;
 					}
@@ -538,10 +602,10 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 			errorParser(code-6, L"no '#if' found for '#endif'.");
 		
 		uint tmpArgsIndex = 0;
-		for(i=0; (i+code<EndCode && code[i]!=0); i++){ // проверка всех имен макросов
+		for(i=0; i<defIndex; i++){ // проверка всех имен макросов
 			if(cmpstr(tmp, defines[i].name)){
 					
-				if(defines[i].value==0)
+				if(defines[i].value == 0)
 					errorParser(code-lenstr(defines[i].name),
 						addstr( L"This define cannot be used! Since it has no value. Name define: ", defines[i].name ));
 					
@@ -586,8 +650,14 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 							for(j=0; j < nowDef.indexArgs; j++){
 								if( cmpstr(nowDef.value+i, nowDef.args[j]) ){
 									tmp3 = true;
-									for(u=0; u < lenstr(tmpArgs[j]); u++)
+									for(u=0; u < lenstr(tmpArgs[j]); u++){
+										if(OutCodeIndex+u >= MaxOutCodeIndex){
+											MaxOutCodeIndex *= 2;
+											OutCode = (wchar_t*)realloc( OutCode, (MaxOutCodeIndex+1)*sizeof(wchar_t) );
+										}
+										
 										OutCode[OutCodeIndex+u] = (tmpArgs[j])[u];
+									}
 									OutCodeIndex += u;
 									i += lenstr(nowDef.args[j]);
 								}
@@ -601,6 +671,16 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 							
 						}
 						
+				} else {
+					for(j=0; j<lenstr(defines[i].value); j++){
+						if(OutCodeIndex+j >= MaxOutCodeIndex){
+							MaxOutCodeIndex *= 2;
+							OutCode = (wchar_t*)realloc( OutCode, (MaxOutCodeIndex+1)*sizeof(wchar_t) );
+						}
+						
+						OutCode[OutCodeIndex+j] = defines[i].value[j];
+					}
+					OutCodeIndex+=j;
 				}
 					
 				#undef nowDef // чтоб глаза не мазолил
@@ -610,8 +690,14 @@ wchar_t *_parser_withOutLoop(wchar_t *code){ // main func
 		}
 			
 		if(tmp!=0){ // копируем слово в выход
-			for(i=0; i<lenstr(tmp); i++)
+			for(i=0; i<lenstr(tmp); i++){
+				if(OutCodeIndex+i >= MaxOutCodeIndex){
+					MaxOutCodeIndex *= 2;
+					OutCode = (wchar_t*)realloc( OutCode, (MaxOutCodeIndex+1)*sizeof(wchar_t) );
+				}
+				
 				OutCode[OutCodeIndex+i] = tmp[i];
+			}
 			OutCodeIndex+=i;
 		}
 	}
@@ -627,20 +713,34 @@ wchar_t *parser(wchar_t *code){ // основной цикл обработки 
 		if(code==0) return 0;
 		if(code[0]==0) return code;
 		if(cmpstr(lastCode, code)){
-			swap(getSwapIndex()+1); // вытягиваем готовый код из страницы и чистим страницу
+			swap( getSwapIndex()+1 ); // вытягиваем готовый код из страницы и чистим страницу
 			code = copystr(code, 0);
-			swap(getSwapIndex()-1);
-			Local_free();
+			swap( getSwapIndex()-1 );
+			Local_free_list(); // чистим страницу
 			return code;
 		} else lastCode=code;
 	}
 }
 
 int main(){
-	wchar_t *code = openfile(L"C:\\C_C++\\test.c");
 	
+	wchar_t *code = openfile(L"C:\\C_C++\\test.c", false);
+	
+	wchar_t *tmp1 = _parser_withOutLoop(code);
+	
+	tmp1 = _parser_withOutLoop(tmp1);
+	
+	tmp1 = _parser_withOutLoop(tmp1);
+	
+	wprintf(tmp1);
+	
+	Local_free_list();
+	
+	/*
 	wchar_t *tmp = parser(code);
 	
 	wprintf(L"%s", tmp);
+	*/
+	
     return 0;
 }
