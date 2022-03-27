@@ -49,11 +49,9 @@ wchar *openfile(wchar *path, bool retError){ // открывает файл и �
 
 int main(){
 	
-	wchar *out = malloc(200);
-	
-	_preproc(out, L"#define ABC(a, b) 123\n#ifndef ABC\n123\n#endif");
-	
-	wprintf(out);
+	wchar *tmp =  preprocessor( openfile( L"C://C_C++/test.c", false ) );
+	tmp = formatStr(tmp);
+	wprintf( tmp );
 	
 	return 0;
 }

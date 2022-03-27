@@ -1,3 +1,11 @@
+/*
+ * Препроцессор для Си | Preprocessor for C
+ * 
+ * by illya334 (zeq52giw)
+ * 
+ * Habr: https://habr.com/ru/users/illya334/
+ */
+ 
 #include <stdio.h> // _wfopen, fgetwc
 #include <stdlib.h> // malloc, realloc
 #include <wchar.h> // wchar_t
@@ -45,7 +53,8 @@ uint defIndex = 0,
 uint i = 0, // временые переменые, для циклов
 	 j = 0,
 	 h = 0,
-	 u = 0;
+	 u = 0,
+	 g = 0;
 
 wchar *OutCode = 0; // Масив для хранения результата
 uint OutCodeIndex = 0,
@@ -55,20 +64,25 @@ wchar *buf = 0; // Временый буфер
 uint BufIndex = 0,
 	 BufMaxLen = 0;
 
+wchar (*InArgs)[MaxDefArgs]; // Для preproc_definePush
+uint InArgsMaxLen[MaxDefArgs];
+bool InArgsWasInit = false;
+
 wchar *tmp; // временый адресс
 
 // =========== REF ===============
-wchar *getPreprocName(wchar *code);
-
 uint preproc_include(wchar *code);
 uint preproc_define(wchar *code);
+uint preproc_definePush(wchar *code);
 uint preproc_undef(wchar *code);
 uint preproc_ifdef(wchar *code);
-uint preproc_if(wchar *code);
+uint preproc_if(wchar *code); // не реализовано
+
+void reload_preproc(wchar **code, wchar **EndCode);
 // ===============================
 
-wchar *_preproc(wchar *out, wchar *code){
-	if(code[0]==0 || code==0) error("'_preproc' get zero."); // заглужка
+wchar *preprocessor(wchar *code){
+	if(code[0]==0 || code==0) error("'preprocessor' get zero."); // заглужка
 	Lines = 0;
 	
 	code = formatStr(code);
@@ -80,6 +94,14 @@ wchar *_preproc(wchar *out, wchar *code){
 	
 	wchar *EndCode = code + lenstr(code);
 	
+	if( InArgsWasInit == false ){ // инициализация InArgs
+		InArgsWasInit = true;
+		for(i=0; i < MaxDefArgs; i++){
+			InArgs[i] = malloc( 20 * sizeof(wchar) );
+			InArgsMaxLen[i] = 20;
+		}
+	}
+	
 	while( code < EndCode ){
 		
 		dynamic_array_process( &defines, defIndex, &MaxDefIndex, sizeof(struct def) );
@@ -88,16 +110,38 @@ wchar *_preproc(wchar *out, wchar *code){
 		
 		if( code[0] == L'\n' ) Lines++;
 		
+		// игнор коментариев
 		if( code[0] == L'/' && code[1] == L'/' ){ // однострочный коментарий
 			for(i=0; code < EndCode; i++)
 				if(code[i]==L'\n') break;
-			code += i;
+			code += ++i;
 			continue;
 		}
-		
 		if( code[0] == L'/' && code[1] == L'*' ){ // много строчный коментарий
 			for(i=0; code < EndCode; i++)
 				if(code[i] == L'*' && code[i+1] == L'/') break;
+			code += i+2;
+			continue;
+		}
+		
+		// игнор строк
+		if( code[0] == L'\"' ){
+			for(i=1; code+i<EndCode; i++)
+				if( code[i] == L'\"' ) break;
+			i++;
+			dynamic_array_process( &OutCode, OutCodeIndex + i, &OutCodeMaxLen, sizeof(wchar) );
+			cpystr( OutCode+OutCodeIndex, code, i );
+			OutCodeIndex += i;
+			code += i;
+			continue;
+		}
+		if( code[0] == L'\'' ){
+			for(i=1; code+i<EndCode; i++)
+				if( code[i] == L'\'' ) break;
+			i++;
+			dynamic_array_process( &OutCode, OutCodeIndex + i, &OutCodeMaxLen, sizeof(wchar) );
+			cpystr( OutCode+OutCodeIndex, code, i );
+			OutCodeIndex += i;
 			code += i;
 			continue;
 		}
@@ -105,7 +149,7 @@ wchar *_preproc(wchar *out, wchar *code){
 		if( code[0] == L'#' ){ // обработка команд
 			code++;
 			
-			for(i=0; code+i < EndCode; i++)
+			for(i=0; code+i < EndCode; i++) // получении имени команды
 				if( !( code[i]>=L'a' && code[i]<=L'z' ) ) break;
 			
 			if( i > 0 ){
@@ -113,20 +157,34 @@ wchar *_preproc(wchar *out, wchar *code){
 				tmp = cpystrMem(code, i);
 				code += i;
 			
-				if( cmpstr(tmp, L"include") ) // #include < somecode.c >
+				if( cmpstr(tmp, L"include") ){ // #include < somecode.c >
 					code += preproc_include(code);
-				else if( cmpstr(tmp, L"define") ) // #define ABC 123
+					
+					reload_preproc(&code, &EndCode);
+					continue;
+				} else if( cmpstr(tmp, L"define") ) // #define ABC 123
 					code += preproc_define(code);
 				else if( cmpstr(tmp, L"undef") )  // #undef ABC
 					code += preproc_undef(code);
-				else if( cmpstr(tmp, L"ifdef") || cmpstr(tmp, L"ifndef") ) // #ifdef (#ifndef) ABC ... #endif (#else)
+				else if( cmpstr(tmp, L"ifdef") || cmpstr(tmp, L"ifndef") ){ // #ifdef (#ifndef) ABC ... #endif (#else)
 					code += preproc_ifdef(code);
-				else if( cmpstr(tmp, L"if") )
-					code += preproc_if(code);
+					
+					reload_preproc(&code, &EndCode);
+					continue;
+				}
+				//else if( cmpstr(tmp, L"if") ) // пока не буду делать
+					//code += preproc_if(code);
 				else
 					errorParser(code, L"Invalid preprocessor command.");
 			}
 			continue;
+		}
+		
+		// проверка имен макросов и запись их
+		i = preproc_definePush(code);
+		if( i > 0 ){
+			code += i;
+			reload_preproc(&code, &EndCode);
 		}
 		
 		OutCode[OutCodeIndex] = code[0];
@@ -135,10 +193,21 @@ wchar *_preproc(wchar *out, wchar *code){
 	}
 	
 	OutCode[OutCodeIndex] = 0; // На всякий случай
-    return cpystr( out, OutCode, 0 );
+    return OutCode;
 }
 
 // Функции для сокращения кода
+void reload_preproc(wchar **code, wchar **EndCode){ // требуеца перезапустить парсер с самого начала, не обрабатывая код дальше, чтобы небыло конфликта с другими директивами
+	tmp = addstr( OutCode, *code );
+	OutCodeIndex = 0;
+	
+	dynamic_array_process( &buf, lenstr(tmp), &BufMaxLen, sizeof(wchar) );
+	
+	cpystr( buf, tmp, 0 );
+	*code = buf;
+	*EndCode = *code + lenstr(*code);
+	Lines = 0;
+}
 wchar *getPreprocName(wchar *code){ // получает имя после команды препроцессора: #define, #ifdef, ...
 	// возращает обработаную строку и смещение (i)
 	
@@ -187,6 +256,13 @@ bool ifdefined(wchar *name){ // была ли создана константа?
 }
 bool cmpif(wchar *cmp){ // обработка условий if...
 	// самое сложное в препроцесоре
+	// это заготовка.
+	
+	/*
+	 * cmp - строка с условиями типа ( ( ABC > 5 ) || ( 1 == 1 && 2 < 5 ) )
+	 * 
+	 * задача этой функции вернуть true/false
+	 */
 }
 
 // функции обработки команд препроцесора
@@ -209,7 +285,6 @@ uint preproc_include(wchar *code){
 			if( (code[i]==L'\"' && j==1) || (code[i]==L'\'' && j==2) ) j=0;
 			if( (code[i]==L'<' || code[i]==L'\"') && j==0 ) break;
 		}
-		i--;
 		
 		tmp = cpystrMem(code, i);
 		
@@ -302,6 +377,47 @@ uint preproc_define(wchar *code){
 	preproc_define_end_label:
 	return (uint)(code - startCode);
 }
+uint preproc_definePush(wchar *code){ // вставка макросов в код
+	#define nowDef defines[i] // легче читаеца
+	for(i=0; i<defIndex; i++){
+		if( cmpstr(code, nowDef.name) ){
+		
+			// перепрыгиваем имя макроса
+			code += lenstr(nowDef.name);
+					
+			if( nowDef.value[0] == 0 ) // может ли данный макрос использоваца?
+				errorParser(code-lenstr(nowDef.name),
+					addstr( L"This define cannot be used! Since it has no value. Name define: ", nowDef.name ));
+					
+			if( code[0] == L'(' ){ // вводит ли пользователь аргументы?
+				code++;
+				if( nowDef.args[0][0] == 0 )
+					errorParser(code-lenstr(nowDef.name),
+						addstr( L"This define does not support arguments. Name define: ", nowDef.name ));
+				
+				while(code < EndCode){
+					for(j=0; code+j < EndCode; j++){ // получаем аргумент который нужно вписать
+						if( code[j] == L'(' ) h++;
+						if( code[j] == L')' ) h--;
+						if( h == 0 && ( code[h] == L',' || code[h] == L')' ) ) break;
+					}
+					tmp = cpystrMem( code, j );
+					code += j;
+					
+					// тут
+				}
+			
+			} else { // Макрос без аргументов
+				reg uint tmpLenValue = lenstr(nowDef.value); // длина value
+				dynamic_array_process( &OutCode, OutCodeIndex + tmpLenValue, &OutCodeMaxLen, sizeof(wchar) ); // сможет ли влезть value, если нет то разщиряем
+				cpystr( OutCode + OutCodeIndex, nowDef.value, 0 ); // копируем value в OutCode
+				OutCodeIndex += tmpLenValue;
+			}
+		
+			break;
+		}
+	}
+}
 uint preproc_undef(wchar *code){
 	wchar *startCode = code;
 	
@@ -375,7 +491,7 @@ uint preproc_ifdef(wchar *code){
 	preproc_if_end_label:
 	return (uint)(code - startCode);
 }
-uint preproc_if(wchar *code){
+uint preproc_if(wchar *code){ // не реализовано
 	
 	wchar *startCode = code;
 	wchar *EndCode = code + lenstr(code);
@@ -423,6 +539,6 @@ uint preproc_if(wchar *code){
 			}
 		}
 	}
-	
+	preproc_if_end_label:
 	return (uint)(code - startCode);
 }

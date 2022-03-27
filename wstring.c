@@ -1,3 +1,11 @@
+/*
+ * Работа со Unicode строками | Work with Unicode string
+ * 
+ * by illya334 (zeq52giw)
+ * 
+ * Habr: https://habr.com/ru/users/illya334/
+ */
+
 #include <stdlib.h> // malloc, realloc, free
 #include <wchar.h> // wchar_t
 #include <stdint.h> // uint8_t
@@ -72,11 +80,11 @@ wchar_t *cpystrMem(wchar_t *str, uint len){
 	return _wstring_outstr;
 }
 bool cmpstr(wchar_t *str1, wchar_t *str2){
-	reg uint i;
-	if(lenstr(str2) > lenstr(str1)) return 0;
+	reg uint i, lenStr2 = lenstr(str2);
+	if(lenStr2 > lenstr(str1) || str1[0] == 0 || str2[0] == 0 || str1 == 0 || str2 == 0 ) return 0;
 	
-	for(i=0; ( str1[i]!=0 || str2[i]!=0 ); i++)
-		if(str1[i]!=str2[i]) return 0;
+	for(i=0; i<lenStr2; i++)
+		if(str1[i] != str2[i]) return 0;
 
 	return 1;
 }
@@ -104,6 +112,7 @@ wchar_t *formatStr(wchar_t *str){ // чистит строку от пробел
 		 
 	wchar_t *EndStr = str + len;
 	
+	j = 0;
 	for(i=0; i+str<EndStr; i++){ // меняем табуляцию на пробел
 		if(str[i]==L'"' && j == 0){ // игнорируем все что в скобках
 			j=1;
