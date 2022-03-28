@@ -6,7 +6,7 @@
  * Habr: https://habr.com/ru/users/illya334/
  */
  
-#include <stdio.h> // _wfopen, fgetwc
+#include <stdio.h> // _wfopen, fgetwc, wprintf
 #include <stdlib.h> // malloc, realloc
 #include <wchar.h> // wchar_t
 #include <stdint.h> // uint8_t
@@ -64,9 +64,14 @@ wchar *buf = 0; // Временый буфер
 uint BufIndex = 0,
 	 BufMaxLen = 0;
 
-wchar (*InArgs)[MaxDefArgs]; // Для preproc_definePush
-uint InArgsMaxLen[MaxDefArgs];
+// Для preproc_definePush
+struct InArgs_st{
+	wchar *arg;
+	uint maxLen;
+};
+struct InArgs_st InArgs[MaxDefArgs]; 
 bool InArgsWasInit = false;
+// =======================
 
 wchar *tmp; // временый адресс
 
@@ -80,6 +85,7 @@ uint preproc_if(wchar *code); // не реализовано
 
 void reload_preproc(wchar **code, wchar **EndCode);
 // ===============================
+
 
 wchar *preprocessor(wchar *code){
 	if(code[0]==0 || code==0) error("'preprocessor' get zero."); // заглужка
@@ -97,8 +103,8 @@ wchar *preprocessor(wchar *code){
 	if( InArgsWasInit == false ){ // инициализация InArgs
 		InArgsWasInit = true;
 		for(i=0; i < MaxDefArgs; i++){
-			InArgs[i] = malloc( 20 * sizeof(wchar) );
-			InArgsMaxLen[i] = 20;
+			InArgs[i].arg = malloc( 20 * sizeof(wchar) );
+			InArgs[i].maxLen = 20;
 		}
 	}
 	
@@ -185,6 +191,7 @@ wchar *preprocessor(wchar *code){
 		if( i > 0 ){
 			code += i;
 			reload_preproc(&code, &EndCode);
+			continue;
 		}
 		
 		OutCode[OutCodeIndex] = code[0];
@@ -195,6 +202,7 @@ wchar *preprocessor(wchar *code){
 	OutCode[OutCodeIndex] = 0; // На всякий случай
     return OutCode;
 }
+
 
 // Функции для сокращения кода
 void reload_preproc(wchar **code, wchar **EndCode){ // требуеца перезапустить парсер с самого начала, не обрабатывая код дальше, чтобы небыло конфликта с другими директивами
@@ -264,6 +272,7 @@ bool cmpif(wchar *cmp){ // обработка условий if...
 	 * задача этой функции вернуть true/false
 	 */
 }
+
 
 // функции обработки команд препроцесора
 uint preproc_include(wchar *code){
@@ -340,6 +349,7 @@ uint preproc_define(wchar *code){
 				if(code[i]==0 || code[i]==L',' || code[i]==L')') break;
 			tmp = cpystrMem(code, i);
 			code += i;
+			tmp = formatStr(tmp);
 			
 			if( cmpformat(tmp)==false ) // Неправильное (возможно) имя аргумента для директивы
 				errorParser(code-i, addstr( L"Invalid argument name for define: ", tmp ));
@@ -378,6 +388,9 @@ uint preproc_define(wchar *code){
 	return (uint)(code - startCode);
 }
 uint preproc_definePush(wchar *code){ // вставка макросов в код
+	wchar *startCode = code;
+	wchar *EndCode = code + lenstr(code);
+
 	#define nowDef defines[i] // легче читаеца
 	for(i=0; i<defIndex; i++){
 		if( cmpstr(code, nowDef.name) ){
@@ -395,18 +408,51 @@ uint preproc_definePush(wchar *code){ // вставка макросов в ко
 					errorParser(code-lenstr(nowDef.name),
 						addstr( L"This define does not support arguments. Name define: ", nowDef.name ));
 				
+				// получение вводимых аргументов
+				#define nowInArgs InArgs[u]
+				u = 0; // текуший индекс аргумета
 				while(code < EndCode){
+					if( u > MaxDefArgs || u > nowDef.indexArgs )
+						errorParser(code-lenstr(nowDef.name),
+							addstr( L"Too much argumets for define: ", nowDef.name ));
+					
+					h = 0;
 					for(j=0; code+j < EndCode; j++){ // получаем аргумент который нужно вписать
-						if( code[j] == L'(' ) h++;
-						if( code[j] == L')' ) h--;
-						if( h == 0 && ( code[h] == L',' || code[h] == L')' ) ) break;
+						if( code[j] == L'(' ) h++; else
+						if( code[j] == L')' && h != 0 ) h--; else
+						if( h == 0 && ( code[j] == L',' || code[j] == L')' ) ) break;
 					}
-					tmp = cpystrMem( code, j );
+					
+					tmp = formatStr( cpystrMem( code, j ) );
+					dynamic_array_process( &(nowInArgs.arg), j, &(nowInArgs.maxLen), sizeof(wchar) );
+					cpystr( nowInArgs.arg, tmp, 0 );
 					code += j;
 					
-					// тут
+					u++;
+					if( code[0]==L',' ) code++; else
+					if( code[0]==L')' ){ code++; break; }
 				}
-			
+				#undef nowInArgs
+				
+				
+				// вставка в код этих аргументов
+				#define nowDefValue nowDef.value
+				for(j=0; j < lenstr(nowDefValue); j++){
+					for(g=0; g < nowDef.indexArgs; g++){
+						if( cmpstr( nowDefValue+j, nowDef.args[g] ) ){
+							reg tmpLen = lenstr( InArgs[g].arg );
+							dynamic_array_process( &OutCode, OutCodeIndex + tmpLen, &OutCodeMaxLen, sizeof(wchar) );
+							cpystr( OutCode + OutCodeIndex, InArgs[g].arg, 0 );
+							j += lenstr( nowDef.args[g] ); // сдвигаем текст на длину аргумента
+							OutCodeIndex += tmpLen;
+						}
+					}
+					dynamic_array_process( &OutCode, OutCodeIndex + 1, &OutCodeMaxLen, sizeof(wchar) );
+					OutCode[OutCodeIndex] = nowDefValue[j];
+					OutCodeIndex++;
+				}
+				#undef nowDefValue
+				
 			} else { // Макрос без аргументов
 				reg uint tmpLenValue = lenstr(nowDef.value); // длина value
 				dynamic_array_process( &OutCode, OutCodeIndex + tmpLenValue, &OutCodeMaxLen, sizeof(wchar) ); // сможет ли влезть value, если нет то разщиряем
@@ -417,6 +463,9 @@ uint preproc_definePush(wchar *code){ // вставка макросов в ко
 			break;
 		}
 	}
+	#undef nowDef
+	
+	return (uint)(code - startCode);
 }
 uint preproc_undef(wchar *code){
 	wchar *startCode = code;

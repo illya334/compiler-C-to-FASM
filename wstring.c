@@ -104,7 +104,7 @@ wchar_t *formatStr(wchar_t *str){ // чистит строку от пробел
 	
 	dynamic_array_process( &_wstring_outstr, lenstr(str), &_len_wstring_outstr, sizeof(wchar_t) );
 	
-	str = cpystrMem(str, 0);
+	if( str != _wstring_outstr ) str = cpystrMem(str, 0);
 	
 	uint OutStrInd = 0,
 		 i, j,
