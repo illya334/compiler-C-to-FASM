@@ -20,17 +20,42 @@
 #define true 1
 #define false 0
 
-uint Lines = 0;
+uint Lines = 1;
+wchar *StartCodeForError = 0; // начало кода, для инициализации функции ошибок
 
 void errorParser(wchar *code, wchar *errorText){ // вывод ошибок парсера, отображение ошибок не очень
 	if(code==0 || errorText==0) exit(1);
-	wprintf(L"ERROR Parser: %s\n", errorText);
-	if(lenstr(code) >= 15){
-		code = cpystrMem(code, 0);
-		code[15]=L'\0';
+	wprintf(L"ERROR Parser: %s\n\n", errorText);
+	
+	wchar *EndCode = StartCodeForError + lenstr(StartCodeForError);
+	code = StartCodeForError;
+	while(code < EndCode){ // получение адреса начала строки
+		if(Lines==1) break;
+		
+		if(code[0]==L'\n')
+			Lines--;
+		
+		code++;
 	}
-	wprintf(L"Lines\t| Code\n");
-	wprintf(L"%d\t| %s\n", Lines, code);
+	if( code != EndCode ){
+		uint i;
+		for(i=0; code+i < EndCode; i++) // получение длины строки
+			if( code[i] == L'\n' ) break;
+		
+		if( i <= 30 )
+			wprintf( L"This:\n%s", cpystrMem( code, i ) );
+		else{ // иначе старый вариант
+			if(lenstr(code) >= 15){
+				code = cpystrMem(code, 0);
+				code[15]=L'\0';
+			}
+			wprintf(L"Lines\t| Code\n");
+			wprintf(L"%d\t| %s\n", Lines, code);
+		}
+		
+		exit(1);
+		
+	}
 	exit(1);
 }
 
@@ -73,7 +98,7 @@ struct InArgs_st InArgs[MaxDefArgs];
 bool InArgsWasInit = false;
 // =======================
 
-wchar *tmp; // временый адресс
+wchar *tmp; // временый адрес
 
 // =========== REF ===============
 uint preproc_include(wchar *code);
@@ -89,7 +114,8 @@ void reload_preproc(wchar **code, wchar **EndCode);
 
 wchar *preprocessor(wchar *code){
 	if(code[0]==0 || code==0) error("'preprocessor' get zero."); // заглужка
-	Lines = 0;
+	Lines = 1;
+	StartCodeForError = code;
 	
 	code = formatStr(code);
 	
@@ -111,7 +137,6 @@ wchar *preprocessor(wchar *code){
 	while( code < EndCode ){
 		
 		dynamic_array_process( &defines, defIndex, &MaxDefIndex, sizeof(struct def) );
-		
 		dynamic_array_process( &OutCode, OutCodeIndex, &OutCodeMaxLen, sizeof(wchar) );
 		
 		if( code[0] == L'\n' ) Lines++;
@@ -214,7 +239,8 @@ void reload_preproc(wchar **code, wchar **EndCode){ // требуеца пере
 	cpystr( buf, tmp, 0 );
 	*code = buf;
 	*EndCode = *code + lenstr(*code);
-	Lines = 0;
+	Lines = 1;
+	StartCodeForError = *code;
 }
 wchar *getPreprocName(wchar *code){ // получает имя после команды препроцессора: #define, #ifdef, ...
 	// возращает обработаную строку и смещение (i)
@@ -336,12 +362,23 @@ uint preproc_define(wchar *code){
 	
 	if(code[0]==L'('){ // есть ли аргументы
 		code++;
-							
+		
+		bool WasNameArg = false;
 		while(code<EndCode && code[0]!=0){
 			if(nowDef.indexArgs > MaxDefArgs)
 				errorParser(code-i, addstr( L"Too much argumets for define: ", tmp ));
 			
-			if(code[0]==L' ' || code[0]==L','){ code++; continue; }
+			if(code[0]==L','){
+				if(WasNameArg == false)
+					errorParser(code-i, addstr( L"Invalid argument for define: ", nowDef.name ));
+				
+				code++;
+				WasNameArg = false;
+				continue;
+			}
+			WasNameArg = false;
+			
+			if(code[0]==L' '){ code++; continue; }
 			if(code[0]==L'\n') break;
 			if(code[0]==L')'){ code++; break; }
 			
@@ -351,14 +388,15 @@ uint preproc_define(wchar *code){
 			code += i;
 			tmp = formatStr(tmp);
 			
-			if( cmpformat(tmp)==false ) // Неправильное (возможно) имя аргумента для директивы
-				errorParser(code-i, addstr( L"Invalid argument name for define: ", tmp ));
+			if( cmpformat(tmp)==false || lenstr(tmp) == 0 ) // Неправильное (возможно) имя аргумента для директивы
+				errorParser(code-i, addstr( L"Invalid argument name for define: ", nowDef.name ));
 			
 			if( lenstr(tmp) > MaxDefArgLen )
 				errorParser(code-i, addstr( L"Name too big for define: ", tmp ));
 			
 			cpystr( nowDef.args[nowDef.indexArgs], tmp, 0 );
 			nowDef.indexArgs++;
+			WasNameArg = true;
 		}
 	}
 	
@@ -412,9 +450,6 @@ uint preproc_definePush(wchar *code){ // вставка макросов в ко
 				#define nowInArgs InArgs[u]
 				u = 0; // текуший индекс аргумета
 				while(code < EndCode){
-					if( u > MaxDefArgs || u > nowDef.indexArgs )
-						errorParser(code-lenstr(nowDef.name),
-							addstr( L"Too much argumets for define: ", nowDef.name ));
 					
 					h = 0;
 					for(j=0; code+j < EndCode; j++){ // получаем аргумент который нужно вписать
@@ -424,11 +459,21 @@ uint preproc_definePush(wchar *code){ // вставка макросов в ко
 					}
 					
 					tmp = formatStr( cpystrMem( code, j ) );
+					
+					if( lenstr(tmp) == 0 )
+						errorParser(code-lenstr(nowDef.name),
+							addstr( L"Invalid argument for define: ", nowDef.name ));
+					
 					dynamic_array_process( &(nowInArgs.arg), j, &(nowInArgs.maxLen), sizeof(wchar) );
 					cpystr( nowInArgs.arg, tmp, 0 );
 					code += j;
 					
 					u++;
+					
+					if( u > MaxDefArgs || u > nowDef.indexArgs )
+						errorParser(code-lenstr(nowDef.name),
+							addstr( L"Too much argumets for define: ", nowDef.name ));
+					
 					if( code[0]==L',' ) code++; else
 					if( code[0]==L')' ){ code++; break; }
 				}
