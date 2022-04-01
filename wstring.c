@@ -22,10 +22,17 @@ void setmem(char *buf, uint count, char ch){
 		buf[i] = ch;
 }
 
-void dynamic_array_process(void **arr, uint nowIndex, uint *MaxIndex, uint size){
+void dynamic_array_process(void **arr, uint nowIndex, uint *MaxIndex, uint size){ // обработка масивов
+	/*
+	 * Если не существует - создать.
+	 * Если мало места - розщирить
+	 * 
+	 */
 	if( arr != 0 ){
 		if( *arr == 0 ){
 			
+			if( nowIndex == 0 && *MaxIndex == 0 ) *MaxIndex = nowIndex = 20;
+			else
 			if( *MaxIndex == 0 ) *MaxIndex = nowIndex;
 			
 			if( *MaxIndex != 0 ){
