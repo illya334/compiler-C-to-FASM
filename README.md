@@ -1,4 +1,4 @@
-# translator-C-to-FASM (v1.0 beta)
+# translator/compiler-C-to-FASM (v1.0 beta)
 
 NOT WORK
 
