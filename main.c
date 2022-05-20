@@ -49,9 +49,7 @@ wchar *openfile(wchar *path, bool retError){ // открывает файл и �
 
 int main(){
 	
-	wchar *tmp = preprocessor( openfile( L"C://C_C++/test.c", false ) );
-	tmp = formatStr(tmp);
-	wprintf( tmp );
+	lexer( L"register int a = 10;\nchar c = 'A';" );
 	
 	return 0;
 }
